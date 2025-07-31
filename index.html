@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SilkItElegantly - www.silkitelegantly.sh</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <video class="background-video" autoplay muted loop playsinline>
+            <source src="SilkItLogos/silk-video.mp4" type="video/mp4">
+            <!-- Fallback to gradient if video doesn't load -->
+        </video>
+        <div class="background-overlay"></div>
+        
+        <header class="header">
+            <div class="logo-container">
+                <img src="logo.png" alt="SilkItElegantly Logo" class="logo">
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="content-wrapper">
+                <h1 class="brand-title">SilkItElegantly</h1>
+                <p class="tagline">Where Elegance Meets Innovation</p>
+                
+                <div class="coming-soon-section">
+                    <h2 class="coming-soon-title">Coming Soon</h2>
+                    <p class="coming-soon-text">We're crafting something extraordinary for you. Our brand is about to make its grand entrance.</p>
+                    
+                    <div class="countdown-container">
+                        <div class="countdown-item">
+                            <span class="countdown-number" id="days">00</span>
+                            <span class="countdown-label">Days</span>
+                        </div>
+                        <div class="countdown-item">
+                            <span class="countdown-number" id="hours">00</span>
+                            <span class="countdown-label">Hours</span>
+                        </div>
+                        <div class="countdown-item">
+                            <span class="countdown-number" id="minutes">00</span>
+                            <span class="countdown-label">Minutes</span>
+                        </div>
+                        <div class="countdown-item">
+                            <span class="countdown-number" id="seconds">00</span>
+                            <span class="countdown-label">Seconds</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="email-signup">
+                    <h3>Be the First to Know</h3>
+                    <p>Get notified when we launch and receive exclusive early access.</p>
+                    <form class="signup-form" id="signupForm">
+                        <div class="input-group">
+                            <input type="email" id="email" placeholder="Enter your email address" required>
+                            <button type="submit" class="submit-btn">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="social-links">
+                    <a href="#" class="social-link"><i class="fab fa-instagram"></i></a>
+                    <a href="#" class="social-link"><i class="fab fa-facebook"></i></a>
+                    <a href="#" class="social-link"><i class="fab fa-twitter"></i></a>
+                    <a href="#" class="social-link"><i class="fab fa-tiktok"></i></a>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>&copy; 2024 SilkItElegantly. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 

@@ -1,0 +1,373 @@
+/* CSS Variables for Pastel Color Palette */
+:root {
+    --pastel-green: #A8E6CF;
+    --pastel-yellow: #FFEAA7;
+    --pastel-golden: #FFD93D;
+    --pastel-pink: #FFB6C1;
+    --pastel-blue: #B8E6B8;
+    --soft-white: #F8F9FA;
+    --text-dark: #2C3E50;
+    --text-light: #6C757D;
+    --shadow-light: rgba(0, 0, 0, 0.1);
+    --shadow-medium: rgba(0, 0, 0, 0.15);
+}
+
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background: linear-gradient(135deg, var(--pastel-green) 0%, var(--pastel-blue) 25%, var(--pastel-pink) 50%, var(--pastel-yellow) 75%, var(--pastel-golden) 100%);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* Video Background */
+.background-video {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: -2;
+}
+
+.background-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, 
+        rgba(168, 230, 207, 0.3) 0%, 
+        rgba(184, 230, 184, 0.3) 25%, 
+        rgba(255, 182, 193, 0.3) 50%, 
+        rgba(255, 234, 167, 0.3) 75%, 
+        rgba(255, 217, 61, 0.3) 100%);
+    z-index: -1;
+}
+
+/* Fallback gradient if video doesn't load */
+.background-video:not([src]) {
+    background: linear-gradient(45deg, 
+        var(--pastel-green) 0%, 
+        var(--pastel-blue) 20%, 
+        var(--pastel-pink) 40%, 
+        var(--pastel-yellow) 60%, 
+        var(--pastel-golden) 80%, 
+        var(--pastel-green) 100%);
+    background-size: 400% 400%;
+    animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Container */
+.container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+}
+
+/* Header */
+.header {
+    padding: 2rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.logo-container {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 1rem 2rem;
+    border-radius: 20px;
+    box-shadow: 0 8px 32px var(--shadow-light);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.logo {
+    height: 60px;
+    width: auto;
+    object-fit: contain;
+}
+
+/* Main Content */
+.main-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.content-wrapper {
+    text-align: center;
+    max-width: 800px;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 3rem;
+    border-radius: 30px;
+    box-shadow: 0 20px 60px var(--shadow-medium);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Brand Title */
+.brand-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 3.5rem;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 0.5rem;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.tagline {
+    font-size: 1.2rem;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 3rem;
+    font-weight: 300;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Coming Soon Section */
+.coming-soon-section {
+    margin-bottom: 3rem;
+}
+
+.coming-soon-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.5rem;
+    color: white;
+    margin-bottom: 1rem;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.coming-soon-text {
+    font-size: 1.1rem;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 2rem;
+    line-height: 1.6;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Countdown */
+.countdown-container {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.countdown-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: linear-gradient(135deg, var(--pastel-pink), var(--pastel-yellow));
+    padding: 1.5rem;
+    border-radius: 20px;
+    min-width: 100px;
+    box-shadow: 0 8px 25px var(--shadow-light);
+    transition: transform 0.3s ease;
+}
+
+.countdown-item:hover {
+    transform: translateY(-5px);
+}
+
+.countdown-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    font-family: 'Playfair Display', serif;
+}
+
+.countdown-label {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 0.5rem;
+}
+
+/* Email Signup */
+.email-signup {
+    margin-bottom: 3rem;
+}
+
+.email-signup h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem;
+    color: white;
+    margin-bottom: 0.5rem;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.email-signup p {
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 1.5rem;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.signup-form {
+    display: flex;
+    justify-content: center;
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.input-group {
+    display: flex;
+    width: 100%;
+    background: white;
+    border-radius: 50px;
+    overflow: hidden;
+    box-shadow: 0 5px 20px var(--shadow-light);
+    border: 2px solid transparent;
+    transition: border-color 0.3s ease;
+}
+
+.input-group:focus-within {
+    border-color: var(--pastel-pink);
+}
+
+.input-group input {
+    flex: 1;
+    padding: 1rem 1.5rem;
+    border: none;
+    outline: none;
+    font-size: 1rem;
+    font-family: 'Poppins', sans-serif;
+}
+
+.input-group input::placeholder {
+    color: var(--text-light);
+}
+
+.submit-btn {
+    background: linear-gradient(135deg, var(--pastel-pink), var(--pastel-golden));
+    border: none;
+    padding: 1rem 1.5rem;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1.1rem;
+}
+
+.submit-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px var(--shadow-medium);
+}
+
+/* Social Links */
+.social-links {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.social-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, var(--pastel-green), var(--pastel-blue));
+    color: white;
+    border-radius: 50%;
+    text-decoration: none;
+    font-size: 1.2rem;
+    transition: all 0.3s ease;
+    box-shadow: 0 5px 15px var(--shadow-light);
+}
+
+.social-link:hover {
+    transform: translateY(-3px) scale(1.1);
+    box-shadow: 0 8px 25px var(--shadow-medium);
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .content-wrapper {
+        padding: 2rem;
+        margin: 1rem;
+    }
+    
+    .brand-title {
+        font-size: 2.5rem;
+    }
+    
+    .coming-soon-title {
+        font-size: 2rem;
+    }
+    
+    .countdown-container {
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    
+    .countdown-item {
+        min-width: 80px;
+        padding: 1rem;
+    }
+    
+    .countdown-number {
+        font-size: 2rem;
+    }
+    
+    .signup-form {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .input-group {
+        flex-direction: column;
+        border-radius: 25px;
+    }
+    
+    .submit-btn {
+        border-radius: 0 0 25px 25px;
+    }
+}
+
+@media (max-width: 480px) {
+    .header {
+        padding: 1rem;
+    }
+    
+    .logo {
+        height: 40px;
+    }
+    
+    .content-wrapper {
+        padding: 1.5rem;
+    }
+    
+    .brand-title {
+        font-size: 2rem;
+    }
+    
+    .tagline {
+        font-size: 1rem;
+    }
+} 
