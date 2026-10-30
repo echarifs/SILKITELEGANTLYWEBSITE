@@ -12,10 +12,9 @@
     <div class="container">
         <video class="background-video" autoplay muted loop playsinline>
             <source src="SilkItLogos/silk-video.mp4" type="video/mp4">
-            <!-- Fallback to gradient if video doesn't load -->
         </video>
         <div class="background-overlay"></div>
-        
+
         <header class="header">
             <div class="logo-container">
                 <img src="logo.png" alt="SilkItElegantly Logo" class="logo">
@@ -27,11 +26,31 @@
                 <h1 class="brand-title">SilkItElegantly</h1>
                 <p class="tagline">Where Elegance Meets Innovation</p>
 
-                <div class="coming-soon-section">
-                    <h2 class="coming-soon-title">Get your personalized silk malehfa</h2>
-                    <p class="coming-soon-text">Experience the ultimate blend of comfort and elegance with our bespoke silk malehfas.</p>
+                <div class="hero-grid">
+                    <div class="coming-soon-section">
+                        <h2 class="coming-soon-title">Get your personalized silk malehfa</h2>
+                        <p class="coming-soon-text">Experience the ultimate blend of comfort and elegance with our bespoke silk malehfas.</p>
+                        <a href="javascript:void(0)" class="explore-btn" id="exploreBtn">Explore Our Collection</a>
+                    </div>
 
-                    <a href="javascript:void(0)" class="explore-btn" id="exploreBtn">Explore Our Collection</a>
+                    <div class="email-signup">
+                        <h3>Be the First to Know</h3>
+                        <p>Get notified when we launch and receive exclusive early access.</p>
+                        <form class="signup-form" id="signupForm">
+                            <div class="input-group">
+                                <input type="email" id="email" placeholder="Enter your email address" required>
+                                <button type="submit" class="submit-btn">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="whatsapp-container">
+                    <a href="https://wa.me/33768353638" class="whatsapp-btn" target="_blank">
+                        <i class="fab fa-whatsapp"></i> Contact us on WhatsApp
+                    </a>
                 </div>
             </div>
         </main>
@@ -67,27 +86,12 @@
             </div>
         </section>
 
-        <section class="signup-section">
-            <div class="content-wrapper">
-                <div class="email-signup">
-                    <h3>Be the First to Know</h3>
-                    <p>Get notified when we launch and receive exclusive early access.</p>
-                    <form class="signup-form" id="signupForm">
-                        <div class="input-group">
-                            <input type="email" id="email" placeholder="Enter your email address" required>
-                            <button type="submit" class="submit-btn">
-                                <i class="fas fa-paper-plane"></i>
-                            </button>
-                        </div>
-                    </form>
-                </div>
-
-                <div class="social-links">
-                    <a href="#" class="social-link"><i class="fab fa-instagram"></i></a>
-                    <a href="#" class="social-link"><i class="fab fa-facebook"></i></a>
-                    <a href="#" class="social-link"><i class="fab fa-twitter"></i></a>
-                    <a href="#" class="social-link"><i class="fab fa-tiktok"></i></a>
-                </div>
+        <section class="social-section">
+            <div class="social-links">
+                <a href="#" class="social-link"><i class="fab fa-instagram"></i></a>
+                <a href="#" class="social-link"><i class="fab fa-facebook"></i></a>
+                <a href="#" class="social-link"><i class="fab fa-twitter"></i></a>
+                <a href="#" class="social-link"><i class="fab fa-tiktok"></i></a>
             </div>
         </section>
 
@@ -98,4 +102,4 @@
 
     <script src="script.js"></script>
 </body>
-</html> 
+</html>
