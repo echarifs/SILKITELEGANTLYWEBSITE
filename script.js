@@ -1,48 +1,29 @@
-// Countdown Timer
-function updateCountdown() {
-    // Set your launch date here (format: YYYY, MM-1, DD, HH, MM, SS)
-    // Example: August 31, 2025 at 12:00 PM
-    const launchDate = new Date(2025, 7, 31, 12, 0, 0).getTime();
-    const now = new Date().getTime();
-    const distance = launchDate - now;
+// Explore Collection Logic
+document.addEventListener('DOMContentLoaded', function() {
+    const exploreBtn = document.getElementById('exploreBtn');
+    const collectionSection = document.getElementById('collection');
 
-    // Calculate time units
-    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+    if (exploreBtn && collectionSection) {
+        exploreBtn.addEventListener('click', function() {
+            // Show the collection section
+            collectionSection.style.display = 'block';
 
-    // Update DOM elements
-    document.getElementById('days').textContent = days.toString().padStart(2, '0');
-    document.getElementById('hours').textContent = hours.toString().padStart(2, '0');
-    document.getElementById('minutes').textContent = minutes.toString().padStart(2, '0');
-    document.getElementById('seconds').textContent = seconds.toString().padStart(2, '0');
-
-    // If countdown is finished
-    if (distance < 0) {
-        document.getElementById('days').textContent = '00';
-        document.getElementById('hours').textContent = '00';
-        document.getElementById('minutes').textContent = '00';
-        document.getElementById('seconds').textContent = '00';
-        
-        // You can redirect to the main site or show a different message
-        // window.location.href = 'main-site.html';
+            // Smooth scroll to the collection
+            collectionSection.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+        });
     }
-}
-
-// Update countdown every second
-setInterval(updateCountdown, 1000);
-updateCountdown(); // Initial call
+});
 
 // Email Signup Form
 document.getElementById('signupForm').addEventListener('submit', function(e) {
     e.preventDefault();
-    
+
     const email = document.getElementById('email').value;
-    
+
     if (email) {
-        // Here you would typically send the email to your server
-        // For now, we'll just show a success message
         showNotification('Thank you! You\'ll be notified when we launch.', 'success');
         document.getElementById('email').value = '';
     }
@@ -50,12 +31,10 @@ document.getElementById('signupForm').addEventListener('submit', function(e) {
 
 // Notification System
 function showNotification(message, type = 'info') {
-    // Create notification element
     const notification = document.createElement('div');
     notification.className = `notification ${type}`;
     notification.textContent = message;
-    
-    // Style the notification
+
     notification.style.cssText = `
         position: fixed;
         top: 20px;
@@ -71,16 +50,13 @@ function showNotification(message, type = 'info') {
         font-family: 'Poppins', sans-serif;
         font-weight: 500;
     `;
-    
-    // Add to page
+
     document.body.appendChild(notification);
-    
-    // Animate in
+
     setTimeout(() => {
         notification.style.transform = 'translateX(0)';
     }, 100);
-    
-    // Remove after 3 seconds
+
     setTimeout(() => {
         notification.style.transform = 'translateX(100%)';
         setTimeout(() => {
@@ -89,41 +65,15 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
-// Smooth scrolling for anchor links
-document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-    anchor.addEventListener('click', function (e) {
-        e.preventDefault();
-        const target = document.querySelector(this.getAttribute('href'));
-        if (target) {
-            target.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
-            });
-        }
-    });
-});
-
 // Add some interactive effects
 document.addEventListener('DOMContentLoaded', function() {
-    // Add hover effects to countdown items
-    const countdownItems = document.querySelectorAll('.countdown-item');
-    countdownItems.forEach(item => {
-        item.addEventListener('mouseenter', function() {
-            this.style.transform = 'translateY(-10px) scale(1.05)';
-        });
-        
-        item.addEventListener('mouseleave', function() {
-            this.style.transform = 'translateY(0) scale(1)';
-        });
-    });
-    
     // Add typing effect to tagline (optional)
     const tagline = document.querySelector('.tagline');
     if (tagline) {
         const text = tagline.textContent;
         tagline.textContent = '';
         let i = 0;
-        
+
         function typeWriter() {
             if (i < text.length) {
                 tagline.textContent += text.charAt(i);
@@ -131,8 +81,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 setTimeout(typeWriter, 50);
             }
         }
-        
-        // Start typing effect after a short delay
+
         setTimeout(typeWriter, 1000);
     }
 });
@@ -144,4 +93,4 @@ window.addEventListener('scroll', function() {
     if (background) {
         background.style.transform = `translateY(${scrolled * 0.5}px)`;
     }
-}); 
+});
