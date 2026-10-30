@@ -343,49 +343,29 @@ body {
     box-shadow: 0 5px 15px var(--shadow-medium);
 }
 
-/* Hero Grid for Landing Page */
-.hero-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
+/* Hero Stack for Landing Page */
+.hero-stack {
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    text-align: left;
+    gap: 3rem;
+    margin-bottom: 3rem;
 }
 
-.hero-grid .coming-soon-section,
-.hero-grid .email-signup {
-    text-align: left;
+.hero-stack .coming-soon-section,
+.hero-stack .email-signup {
+    text-align: center;
 }
 
-.hero-grid .coming-soon-title,
-.hero-grid .coming-soon-text,
-.hero-grid .email-signup h3,
-.hero-grid .email-signup p {
-    text-align: left;
+.hero-stack .coming-soon-title,
+.hero-stack .coming-soon-text,
+.hero-stack .email-signup h3,
+.hero-stack .email-signup p {
+    text-align: center;
 }
 
-.hero-grid .signup-form {
-    justify-content: flex-start;
-}
-
-@media (max-width: 768px) {
-    .hero-grid {
-        grid-template-columns: 1fr;
-        text-align: center;
-    }
-    .hero-grid .coming-soon-section,
-    .hero-grid .email-signup {
-        text-align: center;
-    }
-    .hero-grid .coming-soon-title,
-    .hero-grid .coming-soon-text,
-    .hero-grid .email-signup h3,
-    .hero-grid .email-signup p {
-        text-align: center;
-    }
-    .hero-grid .signup-form {
-        justify-content: center;
-    }
+.hero-stack .signup-form {
+    justify-content: center;
 }
 
 /* Social Section */
