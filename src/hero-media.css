@@ -1,0 +1,45 @@
+.hero {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(32px, 5vw, 80px);
+}
+
+.hero-copy,
+.hero-logo {
+  min-width: 0;
+}
+
+.hero-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-brand-image {
+  width: min(100%, 460px);
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 30px rgba(75, 50, 60, 0.1));
+}
+
+.product-gallery {
+  min-width: 0;
+}
+
+.product-gallery .product-video {
+  display: block;
+  width: 100%;
+  max-height: 640px;
+  aspect-ratio: 3 / 4;
+  object-fit: contain;
+  border-radius: var(--radius);
+  background: #2c2026;
+}
+
+body.menu-open {
+  overflow: hidden;
+}
+
+[id] {
+  scroll-margin-top: 110px;
+}

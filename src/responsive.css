@@ -1,0 +1,344 @@
+/* =========================================================
+   Responsive enhancement
+   Imported after the base, wordmark, and footer styles.
+   ========================================================= */
+
+/* Keep off-canvas navigation out of the visible and interactive tree
+   until the existing menu handler adds .open. */
+.mobile-nav {
+  visibility: hidden;
+  pointer-events: none;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  transition: transform 300ms ease, visibility 300ms ease;
+}
+
+.mobile-nav.open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Home hero: copy and the new transparent brand image sit side by side
+   at desktop widths. */
+.hero {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  grid-template-rows: min-content;
+  align-content: center;
+  align-items: stretch;
+  gap: clamp(28px, 6vw, 88px);
+}
+
+.hero-copy,
+.hero-logo {
+  min-width: 0;
+}
+
+.hero-copy {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.hero-logo {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-brand-image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/* Product media is a horizontal gallery: images and videos stay on one row
+   and snap into place as you scroll sideways. Videos remain user-controlled;
+   no playback behavior is set here. */
+.product-gallery {
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(47, 37, 35, 0.28) transparent;
+}
+
+.product-gallery::-webkit-scrollbar {
+  height: 6px;
+}
+
+.product-gallery::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(47, 37, 35, 0.22);
+}
+
+.product-gallery img,
+.product-gallery video.product-video {
+  display: block;
+  flex: 0 0 auto;
+  width: min(82%, 440px);
+  max-width: none;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: var(--radius);
+  scroll-snap-align: start;
+  background: linear-gradient(150deg, #eedad4, #dcc0ba);
+}
+
+.product-gallery img:not(:first-child) {
+  aspect-ratio: 3 / 4;
+}
+
+.product-gallery video.product-video {
+  height: auto;
+  max-height: min(70vh, 760px);
+  object-fit: contain;
+  background: #ecd6d0;
+}
+
+/* Preserve the intended product density at each layout tier. */
+.product-grid,
+.collection-page {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Touch targets that are otherwise smaller in the desktop design. */
+.button,
+.header-cart-icon,
+.menu-toggle,
+.mobile-close,
+.add-to-cart-btn,
+.checkout-btn,
+.close-cart,
+.signup-row button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+@media (max-width: 1024px) {
+  .hero {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    gap: 34px;
+    padding-top: 48px;
+  }
+
+  .hero-copy {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .hero-logo {
+    position: static;
+    grid-column: 1;
+    grid-row: auto;
+    order: -1;
+    justify-self: center;
+    width: min(100%, 440px);
+  }
+
+  .hero-brand-image {
+    position: static;
+    width: min(100%, 440px);
+    height: auto;
+  }
+
+  .product-grid,
+  .collection-page {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .site-header {
+    min-width: 0;
+  }
+
+  .site-header .wordmark {
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .header-actions {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .site-header {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .hero {
+    gap: 22px;
+    padding-top: 28px;
+    padding-bottom: 52px;
+  }
+
+  .hero-logo {
+    order: -1;
+    width: min(100%, 240px);
+    justify-self: center;
+  }
+
+  .hero-brand-image {
+    width: min(100%, 240px);
+  }
+
+  .hero h1 {
+    font-size: clamp(1.8rem, 9.4vw, 2.7rem);
+    overflow-wrap: normal;
+  }
+
+  .hero-lede {
+    max-width: 34rem;
+    font-size: 0.98rem;
+  }
+
+  .hero-note {
+    gap: 10px;
+    font-size: 0.78rem;
+  }
+
+  .section-pad,
+  .story-section,
+  .quote-section,
+  .product-detail-grid,
+  .collection-page {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .section-heading {
+    gap: 16px;
+  }
+
+  .section-heading h2,
+  .story-copy h2,
+  .newsletter-card h2 {
+    font-size: clamp(1.9rem, 9vw, 2.55rem);
+  }
+
+  .product-grid,
+  .collection-page {
+    grid-template-columns: 1fr;
+  }
+
+  .product-info {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .product-info strong {
+    margin-left: auto;
+  }
+
+  .product-gallery video.product-video {
+    max-height: 68vh;
+  }
+
+  .signup-row {
+    border-radius: 16px;
+  }
+
+  .signup-row input,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .signup-row button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .mobile-nav {
+    width: min(320px, 88vw);
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-nav > a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .mobile-close {
+    min-width: 44px;
+  }
+
+  .cart-sidebar {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  .cart-header,
+  .cart-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .cart-items {
+    min-height: 0;
+    padding-left: 16px;
+    padding-right: 16px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cart-item-qty button,
+  .cart-item-remove {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .cart-item-qty button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .site-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .footer-links {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px 18px;
+    max-width: 100%;
+  }
+
+  .footer-links a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}

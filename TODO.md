@@ -1,0 +1,32 @@
+# TODO
+
+## Existing preview work
+
+- [x] The supplied Silk It Elegantly frontend and product assets run in the conversation Preview pane; visitor account navigation uses the requested “Sign in | up” label and pastel-pink pill style.
+- [x] Preview has not been published. The earlier preview-only work did not connect production data or change the Google Sheet.
+
+## YouCan Pay sandbox integration
+
+- [x] Secure checkout: use the official YouCan Pay `yp.js` hosted card form with server-side token creation and the provider's 3-D Secure confirmation flow. Silk It Elegantly never receives or stores card numbers or CVV.
+- [x] Card payment method: render YouCan Pay's `credit-card` gateway and retain existing EUR storefront prices using minor-unit amounts. Actual Moroccan/international Visa/Mastercard availability remains subject to YouCan Pay merchant approval and gateway settings.
+- [x] Trusted order amounts: recalculate product/variant prices and totals on the server from a shared catalogue, ignoring browser-supplied prices.
+- [x] Order/payment records: add durable MySQL order records with customer contact, item snapshots, status, currency/amount, sandbox mode and YouCan Pay transaction reference. If sandbox tokenization omits the transaction ID, keep it empty until a matching signed provider event supplies it. The project had no prior order-management table or admin order UI.
+- [x] Webhook receiver: validate `X-YOUCANPAY-SIGNATURE` over exact raw request bytes with HMAC-SHA256 and constant-time comparison; require sandbox events; deduplicate event IDs; match order, amount and currency; bind a missing transaction reference only from the first valid signed event, then enforce exact matches. Synthetic tests cover payment/refund transitions and invalid signatures without writing to managed MySQL.
+- [x] Email implementation and SMTP readiness: payment-confirmation and refund messages are queued only after verified provider events and the worker retries safely. SMTP now authenticates in Preview after secure credential replacement. Actual customer inbox delivery is not verified; the test order is still pending provider confirmation, so no payment email was sent.
+- [x] Secrets and data boundaries: sandbox private credentials remain server-side; live credentials/paths are not implemented; orders and card data are never synced to Google Sheets; no card data is stored.
+- [x] Sandbox-only mode: only the sandbox tokenization URL and sandbox key prefixes are accepted. No live payment was enabled or attempted.
+- [ ] Provider end-to-end activation: YouCan Pay's sandbox tokenization endpoint accepted a token-only response, and the parser supports it. The delegated form-target bug and development-only Preview loopback-origin fix are in place; all 55 automated tests pass. The provider-hosted card form loaded and the requested test Visa was submitted; the newest database record remains `pending_payment` with no transaction reference because no signed webhook has arrived. This is not a confirmed payment, and no payment email was sent. The current Preview origin served the hosted form during this attempt; keep its sandbox host allowlist current if the URL changes, and register a sandbox callback to `POST /api/webhooks/youcan-pay` using the active public Preview origin. The API-v2 webhook-creation endpoint is documented as live-only. One earlier failed synthetic 85 EUR order remains in the shared managed database.
+- [ ] Requested sandbox card test: run a checkout using YouCan Pay's documented Visa `4242 4242 4242 4242` test card, any future expiry and any CVV; the provider documents success without a 3-D Secure challenge. In Preview, the hosted form loaded and this card was submitted with expiry `12/30` and CVV `123`. The app is still waiting for a signed provider callback, so leave this open until payment success is verifiable. Never use this card outside sandbox mode or store its details.
+- [x] Preview delivery: integrated backend is running in the conversation Preview; homepage and route manifest return HTTP 200, and a read-only `SELECT 1` confirms MySQL connectivity. The site remains unpublished.
+
+## Account creation and phone entry
+
+- [ ] Account signup in embedded Preview: `/api/auth/status` reports `emailConfigured:true` and `signupAvailable:true`. Signup requires the exact allowlisted `Origin` and JSON content type without depending on an anonymous session cookie; other state-changing actions retain session-bound CSRF. Preview rewrites `Origin` to loopback, so verification links use the separately configured, allowlisted public HTTPS Preview origin. Namecheap rejected messages while `SMTP_FROM` differed from the authenticated mailbox; the owner authorized using the authenticated mailbox, and the mailer now derives `From` from the URL-decoded SMTP username for account and payment emails. At 2026-11-04 00:31 UTC, the anonymized 2-hour job aggregate showed one message accepted by SMTP, one still pending after two retries, and two earlier jobs rejected after three attempts. These results are not matched to recipient addresses and SMTP acceptance does not prove inbox delivery. Treat attempted accounts as unverified until the user completes verification; do not submit more signup attempts. The worker stores only coarse allowlisted SMTP failure categories, never raw responses or recipient addresses. All 59 tests and the frontend build pass.
+- [x] Optional phone fields in account signup and sandbox checkout let users choose a country calling code; the country is required only when a number is entered, numbers are normalized to E.164, and the server validates again. Automated tests cover country metadata, Morocco/France numbers, invalid values and checkout selector hydration.
+
+## Before any live activation
+
+- [ ] Complete YouCan Pay merchant verification and separately provide live credentials through protected input; do not switch this sandbox-only code to live before explicit approval.
+- [ ] Confirm supported currencies/card brands, host allowlisting and a sandbox-capable webhook registration path with YouCan Pay.
+- [ ] Verify sender identity and an actual customer email delivery before live traffic; SMTP authentication alone does not test message delivery.
+- [ ] Define shipping/tax/fulfillment policy and provide an order-management interface if staff need one; these were not present in the supplied prototype and are not calculated by this sandbox integration.

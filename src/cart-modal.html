@@ -1,0 +1,51 @@
+<!-- Shopping cart drawer. Imported as raw text and injected by main.js. -->
+<div id="cart-modal" class="cart-overlay" aria-hidden="true">
+  <div class="cart-sidebar" role="dialog" aria-modal="true" aria-labelledby="cart-title">
+    <div class="cart-header">
+      <h2 id="cart-title" class="cart-title">Your cart</h2>
+      <button class="close-cart" type="button" aria-label="Close cart">&times;</button>
+    </div>
+
+    <div class="cart-items"></div>
+
+    <section class="checkout-panel" aria-label="Secure card checkout" aria-hidden="true" hidden>
+      <p class="checkout-sandbox-note"><strong>Sandbox mode</strong> — no real charge. Card details are entered on YouCan Pay's secure form.</p>
+      <form class="checkout-details-form">
+        <label>Full name
+          <input type="text" name="customerName" autocomplete="name" maxlength="128" required>
+        </label>
+        <label>Email for order updates
+          <input type="email" name="customerEmail" autocomplete="email" maxlength="254" required>
+        </label>
+        <div class="phone-field checkout-phone-field">
+          <label for="checkout-customer-phone">Phone (optional)</label>
+          <div class="phone-field-controls">
+            <select class="phone-country-select" data-phone-country="customerPhone" aria-label="Country calling code" autocomplete="country">
+              <option value="">Select country</option>
+            </select>
+            <input class="phone-number-input" id="checkout-customer-phone" name="customerPhone" type="tel" autocomplete="tel-national" maxlength="40" inputmode="tel" placeholder="Local phone number">
+          </div>
+          <p class="phone-field-error" data-phone-error="customerPhone" role="status" aria-live="polite" hidden></p>
+        </div>
+        <button class="checkout-create-session" type="submit">Continue to secure card form</button>
+      </form>
+      <div class="checkout-payment-stage" hidden>
+        <div id="youcanpay-element"></div>
+        <button class="checkout-confirm-btn" type="button" disabled>Pay securely</button>
+      </div>
+      <p class="checkout-status" role="status" aria-live="polite"></p>
+      <button class="checkout-back" type="button">Back to cart</button>
+    </section>
+
+    <div class="cart-footer">
+      <div class="cart-total">
+        <span>Total</span>
+        <strong class="footer-total">&euro;0</strong>
+      </div>
+      <button class="checkout-btn" type="button">Pay by card · Sandbox</button>
+      <button class="checkout-whatsapp" type="button">Prefer WhatsApp? Talk to us</button>
+    </div>
+  </div>
+</div>
+
+<div id="cart-toast" class="cart-toast" role="status" aria-live="polite"></div>

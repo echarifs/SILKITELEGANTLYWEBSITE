@@ -1,0 +1,61 @@
+/* Real HTML text, not an image. The original point sizes share one scale. */
+.wordmark {
+  --logo-unit: 1pt;
+  --logo-lettering: #ca9e7e;
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: calc(68 * var(--logo-unit));
+  height: calc(43 * var(--logo-unit));
+  color: var(--logo-lettering);
+  text-decoration: none;
+  white-space: nowrap;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  margin-left: 60px;
+}
+
+.wordmark__top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: baseline;
+  gap: calc(4.4 * var(--logo-unit));
+  line-height: 1;
+}
+
+.wordmark__silk {
+  font-family: 'Cormorant SC', serif;
+  font-size: calc(24.5 * var(--logo-unit));
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.wordmark__it {
+  font-family: 'Great Vibes', cursive;
+  font-size: calc(15.4 * var(--logo-unit));
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
+  position: relative;
+  top: calc(0.2 * var(--logo-unit));
+}
+
+.wordmark__elegantly {
+  position: absolute;
+  top: calc(18.4 * var(--logo-unit));
+  left: calc(5.2 * var(--logo-unit));
+  font-family: 'Great Vibes', cursive;
+  font-size: calc(16.7 * var(--logo-unit));
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.wordmark.footer-mark {
+  --logo-unit: 1.55pt;
+}

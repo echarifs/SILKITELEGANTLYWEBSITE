@@ -1,0 +1,109 @@
+.footer-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+}
+
+.footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 620px;
+  gap: 20px;
+  text-align: center;
+  margin: 0 auto;
+}
+
+.footer-brand .wordmark.footer-mark {
+  display: flex;
+  justify-content: center;
+  margin: 0 auto;
+  /* The script logotype's ink sits a hair left of its box; nudge it back
+     so the mark shares the same center axis as every other footer row. */
+  left: calc(1.1 * var(--logo-unit));
+  height: calc(36 * var(--logo-unit));
+}
+
+.footer-brand .footer-tagline {
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.footer-brand .socials {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.site-footer .socials a {
+  width: 40px;
+  height: 40px;
+  transition: background-color 180ms ease, border-color 180ms ease;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #dbc6c2;
+}
+
+.site-footer .socials a svg {
+  width: 18px;
+  height: 18px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke: currentColor;
+  fill: none;
+}
+
+.site-footer .socials a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: #ca9e7e;
+  color: #fff;
+}
+
+/* The Snapchat mark is a solid silhouette, not a stroked outline. */
+.site-footer .socials a[aria-label='Snapchat'] svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+.footer-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  text-align: center;
+  margin-top: 40px;
+}
+
+.footer-intention {
+  font-family: var(--serif);
+  font-style: italic;
+  color: #c9acab;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 22px;
+}
+
+@media (max-width: 850px) {
+  .footer-top {
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+  }
+
+  .footer-brand {
+    width: 100%;
+  }
+}

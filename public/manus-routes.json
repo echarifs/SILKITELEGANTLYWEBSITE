@@ -1,0 +1,44 @@
+{
+  "routes": [
+    {
+      "path": "/",
+      "title": "Silk It Elegantly \u2014 Home"
+    },
+    {
+      "path": "/#collection",
+      "title": "Silk It Elegantly \u2014 Collection"
+    },
+    {
+      "path": "/#product/:id",
+      "title": "Silk It Elegantly \u2014 Product details"
+    },
+    {
+      "path": "/#signup",
+      "title": "Silk It Elegantly \u2014 Create account"
+    },
+    {
+      "path": "/#signin",
+      "title": "Silk It Elegantly \u2014 Sign in"
+    },
+    {
+      "path": "/#verify-email",
+      "title": "Silk It Elegantly \u2014 Verify email"
+    },
+    {
+      "path": "/#forgot-password",
+      "title": "Silk It Elegantly \u2014 Password recovery"
+    },
+    {
+      "path": "/#reset-password",
+      "title": "Silk It Elegantly \u2014 Reset password"
+    },
+    {
+      "path": "/#account",
+      "title": "Silk It Elegantly \u2014 My account"
+    },
+    {
+      "path": "/#privacy",
+      "title": "Silk It Elegantly \u2014 Privacy notice"
+    }
+  ]
+}
