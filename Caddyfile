@@ -1,0 +1,8 @@
+silkitelegantly.com {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
+
+www.silkitelegantly.com {
+	redir https://silkitelegantly.com{uri} permanent
+}
