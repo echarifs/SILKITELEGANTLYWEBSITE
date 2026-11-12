@@ -314,6 +314,7 @@
   }
 
   .cart-item-qty button,
+  .cart-item-select,
   .cart-item-remove {
     min-width: 44px;
     min-height: 44px;
@@ -322,6 +323,23 @@
   .cart-item-qty button {
     width: 44px;
     height: 44px;
+  }
+
+  .cart-tools {
+    margin: 0 -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    gap: 6px;
+  }
+
+  .cart-tools-delete,
+  .cart-tools-empty {
+    padding: 6px 8px;
+    font-size: 0.64rem;
+  }
+
+  .cart-item {
+    gap: 8px;
   }
 
   .site-footer {

@@ -127,6 +127,7 @@ const icon = (name) => ({
   close: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>`,
   instagram: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.7" r="1" fill="currentColor" stroke="none"/></svg>`,
   snapchat: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c-3.2 0-4.6 2.6-4.4 5.8l.1 1.3c-.7.1-1.4-.5-2-.2-.6.3-.4 1 .2 1.3l1.8.8c-.4 1.7-1.6 3.1-3.5 3.7-.4.2-.3.6.2.8l2.1.6.5 1.5 2.5-.3c.8.6 1.6.9 2.5.9s1.7-.3 2.5-.9l2.5.3.5-1.5 2.1-.6c.5-.2.6-.6.2-.8-1.9-.6-3.1-2-3.5-3.7l1.8-.8c.6-.3.8-1 .2-1.3-.6-.3-1.3.3-2 .2l.1-1.3C16.6 5.6 15.2 3 12 3Z"/></svg>`,
+  trash: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9.5 7V5.5c0-.8.7-1.5 1.5-1.5h2c.8 0 1.5.7 1.5 1.5V7m3 0-.9 12.2a1.5 1.5 0 0 1-1.5 1.3H8.4a1.5 1.5 0 0 1-1.5-1.3L6 7m4 4.5v5.5m4-5.5v5.5"/></svg>`,
   whatsapp: `<img src="${whatsappUrl}" alt="WhatsApp" style="width:16px; height:16px; object-fit:contain;">`,
   whatsappf: `<img src="${whatsappFooterUrl}" alt="WhatsApp" style="width:18px; height:18px; object-fit:contain;">`,
   tiktok: `<img src="${tiktokUrl}" alt="TikTok" style="width:18px; height:18px; object-fit:contain;">`
@@ -322,18 +323,44 @@ function updateCartCount() {
   }
 }
 
+const selectedCartKeys = new Set();
+
 function renderCartItems() {
   const container = document.querySelector('.cart-items');
   if (!container) return;
 
   const items = cart.getItems();
   if (!items.length) {
+    selectedCartKeys.clear();
     container.innerHTML = '<p class="cart-empty">Your cart is empty.<br />Add a piece to begin your silk story.</p>';
     return;
   }
 
-  container.innerHTML = items.map((item) => `
-    <div class="cart-item" data-key="${item.key}">
+  // Drop selection entries for items no longer in the cart.
+  const validKeys = new Set(items.map((item) => item.key));
+  for (const key of [...selectedCartKeys]) {
+    if (!validKeys.has(key)) selectedCartKeys.delete(key);
+  }
+
+  const selectedCount = selectedCartKeys.size;
+  const allSelected = selectedCount === items.length;
+  const toolbar = `
+    <div class="cart-tools">
+      <label class="cart-tools-label">
+        <input type="checkbox" data-cart-select-all ${allSelected ? 'checked' : ''} />
+        <span>Select all</span>
+      </label>
+      <div class="cart-tools-actions">
+        <button type="button" class="cart-tools-delete" data-cart-action="remove-selected" hidden>Delete (${selectedCount})</button>
+        <button type="button" class="cart-tools-empty" data-cart-action="empty-cart">${icon('trash')}<span>Empty cart</span></button>
+      </div>
+    </div>`;
+
+  container.innerHTML = toolbar + items.map((item) => `
+    <div class="cart-item${selectedCartKeys.has(item.key) ? ' selected' : ''}" data-key="${item.key}">
+      <label class="cart-item-select">
+        <input type="checkbox" data-cart-select ${selectedCartKeys.has(item.key) ? 'checked' : ''} aria-label="Select ${item.productName}" />
+      </label>
       <div class="cart-item-info">
         <h3>${item.productName}</h3>
         <p class="cart-item-details">${item.option}</p>
@@ -343,10 +370,15 @@ function renderCartItems() {
         <span>${item.quantity}</span>
         <button type="button" data-cart-action="increase" aria-label="Increase quantity">+</button>
       </div>
-      <strong class="cart-item-price">${formatCurrency(item.price * item.quantity)}</strong>
-      <button type="button" class="cart-item-remove" data-cart-action="remove" aria-label="Remove item">&times;</button>
+      <div class="cart-item-side">
+        <strong class="cart-item-price">${formatCurrency(item.price * item.quantity)}</strong>
+        <button type="button" class="cart-item-remove" data-cart-action="remove" aria-label="Remove ${item.productName}">${icon('trash')}</button>
+      </div>
     </div>
   `).join('');
+
+  const selectAll = container.querySelector('[data-cart-select-all]');
+  if (selectAll) selectAll.indeterminate = selectedCount > 0 && !allSelected;
 }
 
 function showToast(message) {
@@ -504,16 +536,41 @@ document.addEventListener('click', (e) => {
 
   const action = e.target.closest('[data-cart-action]');
   if (action) {
+    const type = action.dataset.cartAction;
+
+    if (type === 'empty-cart') {
+      if (window.confirm('Empty your cart? This removes all items.')) {
+        const count = cart.getCount();
+        cart.clear();
+        selectedCartKeys.clear();
+        showToast(count === 1 ? 'Item removed' : 'Cart emptied');
+        renderCartItems();
+        updateCartCount();
+      }
+      return;
+    }
+
+    if (type === 'remove-selected') {
+      const count = selectedCartKeys.size;
+      if (!count) return;
+      for (const key of [...selectedCartKeys]) cart.removeItem(key);
+      selectedCartKeys.clear();
+      showToast(count === 1 ? 'Item removed' : `${count} items removed`);
+      renderCartItems();
+      updateCartCount();
+      return;
+    }
+
     const row = action.closest('.cart-item');
     const key = row?.dataset.key;
     if (!key) return;
 
-    if (action.dataset.cartAction === 'remove') {
+    if (type === 'remove') {
       cart.removeItem(key);
     } else {
       const item = cart.getItems().find((entry) => entry.key === key);
       if (item) {
-        const delta = action.dataset.cartAction === 'increase' ? 1 : -1;
+        const delta = type === 'increase' ? 1 : -1;
         cart.setQuantity(key, item.quantity + delta);
       }
     }
@@ -523,6 +580,22 @@ document.addEventListener('click', (e) => {
     return;
   }
 
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.matches('[data-cart-select]')) {
+    const row = e.target.closest('.cart-item');
+    const key = row?.dataset.key;
+    if (!key) return;
+    if (e.target.checked) selectedCartKeys.add(key);
+    else selectedCartKeys.delete(key);
+    renderCartItems();
+  } else if (e.target.matches('[data-cart-select-all]')) {
+    const items = cart.getItems();
+    if (e.target.checked) items.forEach((item) => selectedCartKeys.add(item.key));
+    else selectedCartKeys.clear();
+    renderCartItems();
+  }
 });
 
 document.addEventListener('keydown', (e) => {
