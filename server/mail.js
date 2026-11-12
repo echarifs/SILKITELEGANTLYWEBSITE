@@ -1,34 +1,52 @@
 import nodemailer from 'nodemailer';
 import addressParser from 'nodemailer/lib/addressparser/index.js';
 
-export function createMailService({ smtpUrl = process.env.SMTP_URL, allowedOrigins = new Set() } = {}) {
+export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey = process.env.RESEND_API_KEY, mailFrom = process.env.MAIL_FROM, allowedOrigins = new Set() } = {}) {
   let transport = null;
+  let apiKey = '';
   let ready = false;
   let sender = '';
-  try {
-    const url = new URL(smtpUrl);
-    if (!['smtp:', 'smtps:'].includes(url.protocol) || !url.hostname || !url.username || !url.password) throw new Error('INVALID_SMTP');
-    const authenticatedMailbox = decodeURIComponent(url.username);
-    sender = authenticatedMailboxFromSmtpUrl(url);
-    transport = nodemailer.createTransport({
-      host: url.hostname,
-      port: Number(url.port || (url.protocol === 'smtps:' ? 465 : 587)),
-      secure: url.protocol === 'smtps:',
-      requireTLS: url.protocol !== 'smtps:',
-      auth: { user: authenticatedMailbox, pass: decodeURIComponent(url.password) },
-      tls: { rejectUnauthorized: true, minVersion: 'TLSv1.2' },
-      connectionTimeout: 12000,
-      greetingTimeout: 12000,
-      socketTimeout: 20000,
-      logger: false,
-      debug: false,
-    });
-  } catch {
-    transport = null;
+  const apiRequested = Boolean(resendApiKey);
+  if (apiRequested) {
+    try {
+      const key = String(resendApiKey).trim();
+      if (!/^re_[A-Za-z0-9_-]{8,}$/u.test(key)) throw new Error('INVALID_API_KEY');
+      sender = displaySender(mailFrom);
+      apiKey = key;
+    } catch {
+      apiKey = '';
+      sender = '';
+    }
+  } else {
+    try {
+      const url = new URL(smtpUrl);
+      if (!['smtp:', 'smtps:'].includes(url.protocol) || !url.hostname || !url.username || !url.password) throw new Error('INVALID_SMTP');
+      const authenticatedMailbox = decodeURIComponent(url.username);
+      sender = authenticatedMailboxFromSmtpUrl(url);
+      transport = nodemailer.createTransport({
+        host: url.hostname,
+        port: Number(url.port || (url.protocol === 'smtps:' ? 465 : 587)),
+        secure: url.protocol === 'smtps:',
+        requireTLS: url.protocol !== 'smtps:',
+        auth: { user: authenticatedMailbox, pass: decodeURIComponent(url.password) },
+        tls: { rejectUnauthorized: true, minVersion: 'TLSv1.2' },
+        connectionTimeout: 12000,
+        greetingTimeout: 12000,
+        socketTimeout: 20000,
+        logger: false,
+        debug: false,
+      });
+    } catch {
+      transport = null;
+    }
   }
 
   async function verifyConnection() {
     ready = false;
+    if (apiRequested) {
+      if (!apiKey) return { ok: false, code: 'EMAIL_CONFIGURATION_INVALID' };
+      return verifyApi();
+    }
     if (!transport) return { ok: false, code: 'SMTP_CONFIGURATION_INVALID' };
     try {
       await transport.verify();
@@ -39,8 +57,54 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, allowedOrigi
     }
   }
 
+  async function verifyApi() {
+    try {
+      const response = await fetch('https://api.resend.com/domains', {
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (response.status === 401 || response.status === 403) return { ok: false, code: 'EMAIL_API_AUTHENTICATION_FAILED' };
+      if (!response.ok) return { ok: false, code: 'EMAIL_API_UNAVAILABLE' };
+      const payload = await response.json().catch(() => null);
+      const domain = senderAddress(sender).split('@')[1]?.toLowerCase();
+      const verified = Array.isArray(payload?.data)
+        && payload.data.some((entry) => String(entry?.name || '').toLowerCase() === domain && entry?.status === 'verified');
+      if (!verified) return { ok: false, code: 'EMAIL_DOMAIN_UNVERIFIED' };
+      ready = true;
+      return { ok: true };
+    } catch {
+      return { ok: false, code: 'EMAIL_API_UNAVAILABLE' };
+    }
+  }
+
+  async function deliver(message) {
+    if (!apiKey) {
+      return sendMailSafely(transport, { from: sender, ...message, disableFileAccess: true, disableUrlAccess: true });
+    }
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: sender, to: message.to, subject: message.subject, text: message.text }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (response.ok) return;
+      const error = new Error('EMAIL_DELIVERY_FAILED');
+      error.code = response.status === 401 || response.status === 403 ? 'EMAIL_API_AUTHENTICATION_FAILED'
+        : response.status === 429 ? 'EMAIL_API_RATE_LIMITED'
+          : response.status >= 500 ? 'EMAIL_API_UNAVAILABLE'
+            : 'EMAIL_API_REJECTED';
+      throw error;
+    } catch (error) {
+      if (typeof error?.code === 'string' && error.code.startsWith('EMAIL_')) throw error;
+      const safeError = new Error('EMAIL_DELIVERY_FAILED');
+      safeError.code = 'EMAIL_API_UNAVAILABLE';
+      throw safeError;
+    }
+  }
+
   async function send({ email, name, token, origin }, mode) {
-    if (!ready || !transport) throw new Error('EMAIL_UNAVAILABLE');
+    if (!ready) throw new Error('EMAIL_UNAVAILABLE');
     if (!allowedOrigins.has(origin) || !/^[a-f0-9]{64}$/u.test(token)) throw new Error('INVALID_EMAIL_REQUEST');
     const link = `${origin}/#${mode}?token=${token}`;
     const verification = mode === 'verify-email';
@@ -50,11 +114,11 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, allowedOrigi
       ? 'Confirm your email and enter the password you chose when registering. Opening this link alone does not verify your account.'
       : 'Choose a new password using this one-time link. Completing the reset signs out existing sessions.';
     const text = `Hello ${greeting},\n\n${explanation}\n\n${link}\n\nThis link expires in 30 minutes. If you did not request it, do not use it. You can safely ignore this email; it does not sign you in.\n\nSilkItElegantly`;
-    await sendMailSafely(transport, { from: sender, to: email, subject, text, disableFileAccess: true, disableUrlAccess: true });
+    await deliver({ to: email, subject, text });
   }
 
   async function sendOrderNotice({ email, name, orderId, amountMinor, currency, transactionId, refundAmountMinor = null }, type) {
-    if (!ready || !transport) throw new Error('EMAIL_UNAVAILABLE');
+    if (!ready) throw new Error('EMAIL_UNAVAILABLE');
     if (typeof email !== 'string' || email.length > 254 || /[\r\n\s]/u.test(email)
         || typeof orderId !== 'string' || !/^[a-f0-9-]{36}$/iu.test(orderId)
         || !Number.isSafeInteger(amountMinor) || amountMinor < 1 || !['EUR', 'MAD'].includes(currency)) {
@@ -77,7 +141,7 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, allowedOrigi
     const text = paymentConfirmation
       ? `Hello ${safeName},\n\nYour sandbox card payment has been confirmed for order ${orderReference}.\nTotal: ${total}\nYouCan Pay transaction reference: ${safeReference}\n\nSilkItElegantly`
       : `Hello ${safeName},\n\nA refund update has been received for order ${orderReference}.${refundTotal ? `\nRefund amount recorded: ${refundTotal}.` : ''}\nPlease allow your bank's normal processing time for the refund to appear.\nYouCan Pay transaction reference: ${safeReference}\n\nSilkItElegantly`;
-    await sendMailSafely(transport, { from: sender, to: email, subject, text, disableFileAccess: true, disableUrlAccess: true });
+    await deliver({ to: email, subject, text });
   }
 
   return {
@@ -119,6 +183,18 @@ async function sendMailSafely(transport, message) {
     safeError.code = classifySmtpFailure(error);
     throw safeError;
   }
+}
+
+export function senderAddress(value) {
+  const parsed = addressParser(String(value || '').trim());
+  return parsed.length === 1 ? String(parsed[0].address || '') : '';
+}
+
+export function displaySender(value) {
+  const text = String(value || '').trim();
+  if (!text || /[\r\n]/u.test(text)) throw new Error('INVALID_SENDER');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(senderAddress(text))) throw new Error('INVALID_SENDER');
+  return text;
 }
 
 export function authenticatedMailboxFromSmtpUrl(smtpUrl) {

@@ -34,6 +34,14 @@ test('invalid SMTP configuration fails without network access or secret output',
   mail.close();
 });
 
+test('invalid Resend configuration fails closed without network access', async () => {
+  const mail = createMailService({ resendApiKey: 'not-a-key', mailFrom: 'SilkItElegantly <no-reply@silkitelegantly.com>' });
+  assert.equal(mail.configured, false);
+  assert.deepEqual(await mail.verifyConnection(), { ok: false, code: 'EMAIL_CONFIGURATION_INVALID' });
+  await assert.rejects(() => mail.sendVerification({}), /EMAIL_UNAVAILABLE/);
+  mail.close();
+});
+
 test('transactional mail sender is the URL-decoded authenticated SMTP mailbox', () => {
   assert.equal(authenticatedMailboxFromSmtpUrl('smtps://accounts%40example.test:placeholder@mail.privateemail.com:465'), 'accounts@example.test');
 });
