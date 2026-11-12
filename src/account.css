@@ -133,6 +133,37 @@
   background: rgba(255, 255, 255, 0.78);
 }
 
+/* Single-column country select (direct child), leaving the phone-field
+   country select to its own layout rules in style.css. */
+.account-field > select {
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 40px 11px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.account-field > select:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.account-field > select:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(47, 37, 35, 0.1);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.account-section-title {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
 .account-form[data-submitted="true"] .account-field input:invalid {
   border-color: rgba(137, 55, 57, 0.68);
 }
@@ -457,6 +488,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .account-field input,
+  .account-field > select,
   .account-text-link {
     transition: none;
   }

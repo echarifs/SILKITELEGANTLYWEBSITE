@@ -20,7 +20,9 @@ import {
   setSecurityHeaders,
   setSessionCookie,
   timingSafeEqualBuffers,
+  validateCountry,
   validateName,
+  validateOptionalAddressLine,
   validatePhone,
   validBodyObject,
 } from './security.js';
@@ -405,6 +407,142 @@ export async function createAuthRouter({ pool, mail = {}, sheets = {}, allowedOr
       await revokeSession(pool, state.session);
       clearSessionCookie(res, { secure: sessionCookie.secure });
       res.status(204).end();
+    } catch (error) { next(error); }
+  });
+
+  router.put('/profile', async (req, res, next) => {
+    try {
+      const state = await stateSession(pool, req, sessionCookie.name);
+      if (state.error) return rejectState(res, state.error);
+      const userId = state.session.customer?.id;
+      if (!userId) return res.status(401).json({ error: 'invalid_credentials' });
+      if (!validBodyObject(req.body)) return res.status(400).json({ error: 'invalid_profile' });
+      if (!await rateRequest(pool, req, null, 'profile')) return res.status(429).json({ error: 'try_again_later' });
+
+      const name = validateName(req.body.name);
+      const email = normalizeEmail(req.body.email);
+      const phone = validatePhone(req.body.phone);
+      if (!name || !email || phone === undefined || typeof req.body.marketingConsent !== 'boolean') {
+        return res.status(400).json({ error: 'invalid_profile' });
+      }
+      const user = await findCustomerById(pool, userId);
+      if (!user) return res.status(401).json({ error: 'invalid_credentials' });
+      const emailChanged = email !== user.email;
+      if (emailChanged) {
+        const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
+        const passwordOk = currentPassword && await verifyPassword(currentPassword, user.password_hash || dummyPasswordHash);
+        if (!passwordOk) return res.status(401).json({ error: 'invalid_credentials' });
+      }
+      const marketingConsent = req.body.marketingConsent;
+      const sheetRelevantChanged = emailChanged
+        || name !== user.name
+        || phone !== (user.phone ?? null)
+        || marketingConsent !== Boolean(user.marketing_consent);
+
+      try {
+        await transaction(pool, async (connection) => {
+          if (sheetRelevantChanged) {
+            await connection.query(
+              "UPDATE customers SET name = ?, phone = ?, email = ?, marketing_consent = ?, sheet_sync_status = 'pending' WHERE id = ?",
+              [name, phone, email, marketingConsent ? 1 : 0, userId],
+            );
+          } else {
+            await connection.query(
+              'UPDATE customers SET name = ?, phone = ?, email = ?, marketing_consent = ? WHERE id = ?',
+              [name, phone, email, marketingConsent ? 1 : 0, userId],
+            );
+          }
+        });
+      } catch (error) {
+        if (isDuplicate(error)) return res.status(409).json({ error: 'email_taken' });
+        throw error;
+      }
+      // customerPublic triggers syncIfDue, so a re-enqueued row is tried in-request.
+      return res.json({ user: await customerPublic(pool, sheets, userId) });
+    } catch (error) { next(error); }
+  });
+
+  router.put('/address', async (req, res, next) => {
+    try {
+      const state = await stateSession(pool, req, sessionCookie.name);
+      if (state.error) return rejectState(res, state.error);
+      const userId = state.session.customer?.id;
+      if (!userId) return res.status(401).json({ error: 'invalid_credentials' });
+      if (!validBodyObject(req.body)) return res.status(400).json({ error: 'invalid_profile' });
+      if (!await rateRequest(pool, req, null, 'address')) return res.status(429).json({ error: 'try_again_later' });
+
+      const line1 = validateOptionalAddressLine(req.body.addressLine1);
+      const line2 = validateOptionalAddressLine(req.body.addressLine2);
+      const city = validateOptionalAddressLine(req.body.city, 120);
+      const postalCode = validateOptionalAddressLine(req.body.postalCode, 20);
+      const countryInput = req.body.country;
+      const country = countryInput === undefined || countryInput === null || (typeof countryInput === 'string' && !countryInput.trim())
+        ? null
+        : validateCountry(countryInput);
+      if (line1 === undefined || line2 === undefined || city === undefined || postalCode === undefined || country === undefined) {
+        return res.status(400).json({ error: 'invalid_profile' });
+      }
+      const clearing = line1 === null && line2 === null && city === null && postalCode === null && country === null;
+      if (!clearing && (line1 === null || city === null || postalCode === null || country === null)) {
+        return res.status(400).json({ error: 'invalid_profile' });
+      }
+
+      await pool.query(
+        'UPDATE customers SET address_line1 = ?, address_line2 = ?, city = ?, postal_code = ?, country = ? WHERE id = ?',
+        [line1, line2, city, postalCode, country, userId],
+      );
+      return res.json({ user: await customerPublic(pool, sheets, userId) });
+    } catch (error) { next(error); }
+  });
+
+  router.post('/change-password', async (req, res, next) => {
+    try {
+      const state = await stateSession(pool, req, sessionCookie.name);
+      if (state.error) return rejectState(res, state.error);
+      const userId = state.session.customer?.id;
+      if (!userId) return res.status(401).json({ error: 'invalid_credentials' });
+      if (!validBodyObject(req.body) || typeof req.body.currentPassword !== 'string' || !req.body.currentPassword) {
+        return res.status(400).json({ error: 'invalid_password' });
+      }
+      if (!await rateRequest(pool, req, null, 'password')) return res.status(429).json({ error: 'try_again_later' });
+      const user = await queryOne(pool, 'SELECT * FROM customers WHERE id = ? LIMIT 1', [userId]);
+      const suppliedCurrent = req.body.currentPassword;
+      // Always perform Argon2 verification, including for nonexistent accounts.
+      const passwordOk = await verifyPassword(suppliedCurrent, user?.password_hash || dummyPasswordHash);
+      if (!user || !passwordOk) return res.status(401).json({ error: 'invalid_credentials' });
+      const password = validateNewPassword(req.body, user);
+      // Cheap no-op guard: refuse setting the same literal password.
+      if (!password || password === suppliedCurrent) return res.status(400).json({ error: 'invalid_password' });
+      const passwordHash = await hashPassword(password);
+
+      const session = await transaction(pool, async (connection) => {
+        const [customers] = await connection.query(
+          'SELECT id, password_hash, verified_at FROM customers WHERE id = ? LIMIT 1 FOR UPDATE',
+          [userId],
+        );
+        const current = customers[0];
+        if (!current || current.password_hash !== user.password_hash || !current.verified_at) return null;
+        await connection.query('UPDATE customers SET password_hash = ? WHERE id = ?', [passwordHash, userId]);
+        await connection.query('UPDATE auth_sessions SET revoked_at = UTC_TIMESTAMP(3) WHERE user_id = ? AND revoked_at IS NULL', [userId]);
+        await connection.query(`
+          UPDATE auth_mail_jobs
+             SET status = 'cancelled', completed_at = UTC_TIMESTAMP(3), claimed_at = NULL, safe_error_code = 'PASSWORD_CHANGED'
+           WHERE user_id = ? AND status IN ('pending', 'processing')`, [userId]);
+        const rawToken = randomToken(32);
+        const csrfToken = randomToken(32);
+        const createdAt = now();
+        await connection.query(`
+          INSERT INTO auth_sessions
+            (id, token_hash, csrf_token, user_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+          crypto.randomUUID(), hashToken(rawToken), csrfToken, userId, createdAt, createdAt,
+          dateAfter(SESSION_IDLE_MS), dateAfter(SESSION_ABSOLUTE_MS),
+        ]);
+        return { rawToken, csrfToken };
+      });
+      if (!session) return res.status(401).json({ error: 'invalid_credentials' });
+      setSessionCookie(res, session.rawToken, undefined, { secure: sessionCookie.secure });
+      return res.json({ message: 'Your password has been changed.' });
     } catch (error) { next(error); }
   });
 

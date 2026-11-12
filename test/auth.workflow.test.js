@@ -167,6 +167,7 @@ function createStrictMockPool() {
       customers.set(id, {
         id, email, name, phone, password_hash: passwordHash, marketing_consent: marketingConsent,
         created_at: new Date(), verified_at: null, sheet_sync_status: 'pending', sheet_sync_error: null,
+        address_line1: null, address_line2: null, city: null, postal_code: null, country: null,
       });
       return [{ insertId: id }, []];
     }
@@ -197,6 +198,30 @@ function createStrictMockPool() {
       assertParams(params, 1);
       const customer = customers.get(params[0]);
       if (customer && !customer.verified_at) customer.verified_at = new Date();
+      return [{ affectedRows: customer ? 1 : 0 }, []];
+    }
+
+    if (normalized.startsWith('UPDATE customers SET name = ?')) {
+      assertParams(params, 5);
+      const [name, phone, email, marketingConsent, userId] = params;
+      const customer = customers.get(userId);
+      if (customer) {
+        Object.assign(customer, { name, phone, email, marketing_consent: marketingConsent });
+        if (normalized.includes("sheet_sync_status = 'pending'")) customer.sheet_sync_status = 'pending';
+      }
+      return [{ affectedRows: customer ? 1 : 0 }, []];
+    }
+
+    if (normalized.startsWith('UPDATE customers SET address_line1')) {
+      assertParams(params, 6);
+      const [addressLine1, addressLine2, city, postalCode, country, userId] = params;
+      const customer = customers.get(userId);
+      if (customer) {
+        Object.assign(customer, {
+          address_line1: addressLine1, address_line2: addressLine2,
+          city, postal_code: postalCode, country,
+        });
+      }
       return [{ affectedRows: customer ? 1 : 0 }, []];
     }
 
@@ -315,13 +340,17 @@ async function makeApp(pool, { allowedOrigins = [ORIGIN], publicOrigin = ORIGIN 
 }
 
 function state(agent, csrfToken, cookie) {
+  const headers = (request) => request
+    .set('Origin', ORIGIN)
+    .set('X-CSRF-Token', csrfToken)
+    .set('Cookie', cookie)
+    .set('Content-Type', 'application/json');
   return {
     post(path) {
-      return agent.post(path)
-        .set('Origin', ORIGIN)
-        .set('X-CSRF-Token', csrfToken)
-        .set('Cookie', cookie)
-        .set('Content-Type', 'application/json');
+      return headers(agent.post(path));
+    },
+    put(path) {
+      return headers(agent.put(path));
     },
   };
 }
@@ -460,4 +489,137 @@ test('local signups receive a verification link on the site origin, never a prev
   assert.equal(registration.status, 202, JSON.stringify(registration.body));
   assert.equal(pool.jobs.size, 1);
   assert.equal([...pool.jobs.values()][0].origin, loopbackOrigin);
+});
+
+test('account self-service covers profile edits, address save and clear, and session-rotating password change', async () => {
+  const pool = createStrictMockPool();
+  const app = await makeApp(pool);
+  const agent = request.agent(app);
+
+  async function createVerifiedCustomer(email, password) {
+    await request(app).post('/auth/register')
+      .set('Origin', ORIGIN)
+      .send({ name: NAME, email, password, termsAccepted: true });
+    const customer = [...pool.customers.values()].find((entry) => entry.email === email);
+    const verifyToken = `${Buffer.from(email).toString('hex')}${'0'.repeat(64)}`.slice(0, 64);
+    pool.seedToken({ id: `verify-${email}`, userId: customer.id, type: 'verify_email', token: verifyToken });
+    const csrf = await agent.get('/auth/csrf').set('Origin', ORIGIN);
+    const verified = await state(agent, csrf.body.csrfToken, csrf.headers['set-cookie'][0]).post('/auth/verify-email')
+      .send({ token: verifyToken, password });
+    assert.equal(verified.status, 200, JSON.stringify(verified.body));
+    return customer;
+  }
+
+  const account = await createVerifiedCustomer(EMAIL, OLD_PASSWORD);
+  const login = await state(agent, 'x', null).post('/auth/login').send({ email: EMAIL, password: OLD_PASSWORD });
+  assert.equal(login.status, 200);
+  let cookie = login.headers['set-cookie'][0];
+  const csrf = await agent.get('/auth/csrf').set('Origin', ORIGIN).set('Cookie', cookie);
+  const csrfToken = csrf.body.csrfToken;
+  const put = (path) => state(agent, csrfToken, cookie).put(path);
+
+  // Name-only save keeps the email and re-enqueues sheet sync via the pending variant.
+  const nameSave = await put('/auth/profile').send({
+    name: 'Renamed', email: EMAIL, phone: '+22245294511', marketingConsent: true,
+  });
+  assert.equal(nameSave.status, 200, JSON.stringify(nameSave.body));
+  assert.equal(nameSave.body.user.name, 'Renamed');
+  assert.equal(nameSave.body.user.phone, '+22245294511');
+  assert.equal(nameSave.body.user.marketingConsent, true);
+  assert.equal(nameSave.body.user.addressLine1, null);
+  assert.equal([...pool.customers.values()][0].sheet_sync_status, 'pending');
+
+  // Missing required consent / invalid body → 400.
+  const invalidBody = await put('/auth/profile').send({ name: NAME, email: EMAIL, phone: null });
+  assert.equal(invalidBody.status, 400);
+  assert.equal(invalidBody.body.error, 'invalid_profile');
+
+  // Email change without a current password is refused.
+  const emailNoPassword = await put('/auth/profile').send({
+    name: 'Renamed', email: 'moved@example.invalid', phone: null, marketingConsent: true,
+  });
+  assert.equal(emailNoPassword.status, 401);
+
+  // Email change with the wrong current password is refused.
+  const emailWrongPassword = await put('/auth/profile').send({
+    name: 'Renamed', email: 'moved@example.invalid', phone: null, marketingConsent: true, currentPassword: 'wrong-password-phrase',
+  });
+  assert.equal(emailWrongPassword.status, 401);
+
+  const other = await createVerifiedCustomer('other@example.invalid', OLD_PASSWORD);
+  const emailCollision = await put('/auth/profile').send({
+    name: 'Renamed', email: 'other@example.invalid', phone: null, marketingConsent: true,
+    currentPassword: OLD_PASSWORD,
+  });
+  assert.equal(emailCollision.status, 409);
+  assert.equal(emailCollision.body.error, 'email_taken');
+
+  // Successful email change confirms the stored password and re-enqueues the sheet.
+  const emailChange = await put('/auth/profile').send({
+    name: 'Renamed', email: 'moved@example.invalid', phone: null, marketingConsent: true,
+    currentPassword: OLD_PASSWORD,
+  });
+  assert.equal(emailChange.status, 200, JSON.stringify(emailChange.body));
+  assert.equal(emailChange.body.user.email, 'moved@example.invalid');
+  assert.equal([...pool.customers.values()].find((entry) => entry.id === account.id).email, 'moved@example.invalid');
+
+  // Address save → present on the profile; empty payload clears it.
+  const addressSave = await put('/auth/address').send({
+    addressLine1: '12 Silk Road', addressLine2: '', city: 'Nouakchott', postalCode: '0000', country: 'MR',
+  });
+  assert.equal(addressSave.status, 200, JSON.stringify(addressSave.body));
+  assert.equal(addressSave.body.user.addressLine1, '12 Silk Road');
+  assert.equal(addressSave.body.user.city, 'Nouakchott');
+  assert.equal(addressSave.body.user.country, 'MR');
+
+  const addressInvalid = await put('/auth/address').send({
+    addressLine1: '12 Silk Road', addressLine2: '', city: 'Nouakchott', postalCode: '0000', country: 'ZZ',
+  });
+  assert.equal(addressInvalid.status, 400);
+
+  const addressIncomplete = await put('/auth/address').send({
+    addressLine1: '12 Silk Road', addressLine2: '', city: '', postalCode: '', country: '',
+  });
+  assert.equal(addressIncomplete.status, 400);
+
+  const addressClear = await put('/auth/address').send({
+    addressLine1: '', addressLine2: '', city: '', postalCode: '', country: '',
+  });
+  assert.equal(addressClear.status, 200);
+  assert.equal(addressClear.body.user.addressLine1, null);
+  assert.equal(addressClear.body.user.postalCode, null);
+
+  // Password change: wrong current → 401; weak new → 400; correct → rotation.
+  const wrongCurrent = await state(agent, csrfToken, cookie).post('/auth/change-password').send({
+    currentPassword: 'nope-not-the-password',
+    password: 'Sable!Quartz11Fern#Echo',
+  });
+  assert.equal(wrongCurrent.status, 401);
+
+  const weakPassword = await state(agent, csrfToken, cookie).post('/auth/change-password').send({
+    currentPassword: OLD_PASSWORD,
+    password: 'aaabbbcccdddeee',
+  });
+  assert.equal(weakPassword.status, 400);
+  assert.equal(weakPassword.body.error, 'invalid_password');
+
+  const oldCookie = cookie;
+  const change = await state(agent, csrfToken, cookie).post('/auth/change-password').send({
+    currentPassword: OLD_PASSWORD,
+    password: 'Sable!Quartz11Fern#Echo',
+  });
+  assert.equal(change.status, 200, JSON.stringify(change.body));
+  assert.match(change.body.message, /password/iu);
+  assert.equal([...pool.sessions.values()].filter((session) => session.user_id === account.id && !session.revoked_at).length, 1);
+  cookie = change.headers['set-cookie'][0];
+  assert.notEqual(cookie, oldCookie);
+
+  // The fresh cookie keeps the device signed in; the old one is revoked.
+  const refreshedCsrf = await agent.get('/auth/csrf').set('Origin', ORIGIN).set('Cookie', cookie);
+  assert.equal(refreshedCsrf.status, 200);
+  const freshProfile = await agent.get('/auth/me').set('Cookie', cookie);
+  assert.equal(freshProfile.status, 200);
+  assert.equal(freshProfile.body.user.email, 'moved@example.invalid');
+  const staleProfile = await agent.get('/auth/me').set('Cookie', oldCookie);
+  assert.equal(staleProfile.body.user, null);
 });

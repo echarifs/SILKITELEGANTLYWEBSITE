@@ -85,3 +85,176 @@ test('verification captures a token privately and does not consume it on page re
   assert.equal(requests, 0);
   dom.window.close();
 });
+
+const PROFILE_USER = {
+  id: 'customer-1',
+  name: 'Test Weaver',
+  email: 'test@example.invalid',
+  phone: '+212612345678',
+  marketingConsent: false,
+  addressLine1: null,
+  addressLine2: null,
+  city: null,
+  postalCode: null,
+  country: null,
+  emailVerified: true,
+  createdAt: '2026-01-02T10:00:00.000Z',
+  sheetSyncStatus: 'synced',
+};
+
+test('account page prefills editable forms and saves details with PUT /profile', async () => {
+  const dom = setup('#account');
+  const saved = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const payload = url.endsWith('/me')
+      ? { user: PROFILE_USER }
+      : url.endsWith('/csrf')
+        ? { csrfToken: 'f'.repeat(64) }
+        : { user: { ...PROFILE_USER, name: 'Renamed Weaver', marketingConsent: true } };
+    if (url.endsWith('/profile')) saved.push({ url, body: JSON.parse(options.body) });
+    return { ok: true, status: 200, json: async () => payload };
+  };
+  document.getElementById('app').innerHTML = renderAccountPage('account');
+  await mountAccountPage();
+  await waitUntil(() => !document.querySelector('[data-account-profile]').hidden);
+
+  const form = document.querySelector('[data-account-form="profile"]');
+  assert.equal(form.querySelector('[name="name"]').value, 'Test Weaver');
+  assert.equal(form.querySelector('[name="email"]').value, 'test@example.invalid');
+  assert.equal(form.querySelector('[data-phone-country="phone"]').value, 'MA');
+  assert.equal(form.querySelector('[name="phone"]').value, '0612345678');
+  assert.equal(form.querySelector('[name="currentPassword"]').required, false);
+  assert.equal(form.querySelector('[name="marketingConsent"]').checked, false);
+
+  form.querySelector('[name="name"]').value = 'Renamed Weaver';
+  form.querySelector('[name="marketingConsent"]').checked = true;
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await waitUntil(() => saved.length === 1);
+  assert.equal(saved[0].body.name, 'Renamed Weaver');
+  assert.equal(saved[0].body.email, 'test@example.invalid');
+  assert.equal(saved[0].body.phone, '+212612345678');
+  assert.equal(saved[0].body.marketingConsent, true);
+  assert.equal('currentPassword' in saved[0].body, false, 'no password on non-email changes');
+  assert.equal(form.dataset.initialEmail, 'test@example.invalid');
+  assert.equal(form.querySelector('[name="currentPassword"]').value, '');
+  dom.window.close();
+});
+
+test('email change without a current password is blocked client-side; with one it is sent', async () => {
+  const dom = setup('#account');
+  const saved = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const payload = url.endsWith('/me')
+      ? { user: PROFILE_USER }
+      : url.endsWith('/csrf')
+        ? { csrfToken: 'f'.repeat(64) }
+        : { user: { ...PROFILE_USER, email: 'moved@example.invalid' } };
+    if (url.endsWith('/profile')) saved.push(JSON.parse(options.body));
+    return { ok: true, status: 200, json: async () => payload };
+  };
+  document.getElementById('app').innerHTML = renderAccountPage('account');
+  await mountAccountPage();
+  await waitUntil(() => !document.querySelector('[data-account-profile]').hidden);
+
+  const form = document.querySelector('[data-account-form="profile"]');
+  form.querySelector('[name="email"]').value = 'moved@example.invalid';
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await waitUntil(() => form.querySelector('[data-account-status]').textContent.includes('current password'), 0);
+  assert.equal(saved.length, 0);
+
+  form.querySelector('[name="currentPassword"]').value = 'current password entered';
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await waitUntil(() => saved.length === 1);
+  assert.equal(saved[0].email, 'moved@example.invalid');
+  assert.equal(saved[0].currentPassword, 'current password entered');
+  await waitUntil(() => form.querySelector('[data-account-status]').textContent.includes('saved'));
+  assert.equal(form.dataset.initialEmail, 'moved@example.invalid');
+  dom.window.close();
+});
+
+test('address form saves with PUT /address, clears with an empty payload, and toggles its remove button', async () => {
+  const dom = setup('#account');
+  const saved = [];
+  let currentUser = PROFILE_USER;
+  globalThis.fetch = async (url, options = {}) => {
+    const payload = url.endsWith('/me')
+      ? { user: currentUser }
+      : url.endsWith('/csrf')
+        ? { csrfToken: 'f'.repeat(64) }
+        : null;
+    if (url.endsWith('/address')) {
+      const body = JSON.parse(options.body);
+      saved.push(body);
+      currentUser = {
+        ...currentUser,
+        addressLine1: body.addressLine1 || null,
+        addressLine2: body.addressLine2 || null,
+        city: body.city || null,
+        postalCode: body.postalCode || null,
+        country: body.country || null,
+      };
+      return { ok: true, status: 200, json: async () => ({ user: currentUser }) };
+    }
+    return { ok: true, status: 200, json: async () => payload };
+  };
+  document.getElementById('app').innerHTML = renderAccountPage('account');
+  await mountAccountPage();
+  await waitUntil(() => !document.querySelector('[data-account-profile]').hidden);
+
+  const form = document.querySelector('[data-account-form="address"]');
+  const emptyNote = document.querySelector('[data-account-address-empty]');
+  const removeButton = document.querySelector('[data-account-address-remove]');
+  assert.equal(emptyNote.hidden, false);
+  assert.equal(removeButton.hidden, true);
+
+  form.querySelector('[name="addressLine1"]').value = '12 Silk Road';
+  form.querySelector('[name="city"]').value = 'Nouakchott';
+  form.querySelector('[name="postalCode"]').value = '0000';
+  form.querySelector('[name="country"]').value = 'MR';
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await waitUntil(() => saved.length === 1);
+  assert.deepEqual(saved[0], {
+    addressLine1: '12 Silk Road', addressLine2: '', city: 'Nouakchott',
+    postalCode: '0000', country: 'MR',
+  });
+  await waitUntil(() => emptyNote.hidden === true && removeButton.hidden === false);
+
+  removeButton.click();
+  await waitUntil(() => saved.length === 2);
+  assert.deepEqual(saved[1], {
+    addressLine1: '', addressLine2: '', city: '', postalCode: '', country: '',
+  });
+  await waitUntil(() => emptyNote.hidden === false && removeButton.hidden === true);
+  assert.equal(form.querySelector('[name="addressLine1"]').value, '');
+  dom.window.close();
+});
+
+test('password change posts current and new passwords and clears the inputs', async () => {
+  const dom = setup('#account');
+  const saved = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (url.endsWith('/change-password')) {
+      saved.push(JSON.parse(options.body));
+      return { ok: true, status: 200, json: async () => ({ message: 'Your password has been changed.' }) };
+    }
+    const payload = url.endsWith('/me') ? { user: PROFILE_USER } : { csrfToken: 'f'.repeat(64) };
+    return { ok: true, status: 200, json: async () => payload };
+  };
+  document.getElementById('app').innerHTML = renderAccountPage('account');
+  await mountAccountPage();
+  await waitUntil(() => !document.querySelector('[data-account-profile]').hidden);
+
+  const form = document.querySelector('[data-account-form="password"]');
+  form.querySelector('[name="currentPassword"]').value = 'independent weavers gather moonlight';
+  form.querySelector('[name="password"]').value = 'renewed silkworms hum softly at night';
+  form.querySelector('[name="passwordRepeat"]').value = 'renewed silkworms hum softly at night';
+  form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await waitUntil(() => saved.length === 1);
+  assert.equal(saved[0].currentPassword, 'independent weavers gather moonlight');
+  assert.equal(saved[0].password, 'renewed silkworms hum softly at night');
+  assert.equal('passwordRepeat' in saved[0], false);
+  assert.equal(form.querySelector('[name="currentPassword"]').value, '');
+  assert.equal(form.querySelector('[name="password"]').value, '');
+  assert.match(form.querySelector('[data-account-status]').textContent, /password has been changed/iu);
+  dom.window.close();
+});

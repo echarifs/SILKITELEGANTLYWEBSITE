@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { normalizePhoneNumber } from '../shared/phone.js';
+import { normalizeCountryCode, normalizePhoneNumber } from '../shared/phone.js';
 
 export const SESSION_COOKIE_NAME = '__Host-silkit_session';
 export const DEV_SESSION_COOKIE_NAME = 'silkit_session';
@@ -47,6 +47,22 @@ export function validatePhone(value) {
   const phone = value.normalize('NFC').trim();
   if (!phone) return null;
   return normalizePhoneNumber(phone) || undefined;
+}
+
+/** Optional address line: null clears it, undefined is invalid, a string is kept (limit in code points). */
+export function validateOptionalAddressLine(value, maxLength = 200) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') return undefined;
+  const line = value.normalize('NFC').trim();
+  if (!line) return null;
+  const length = Array.from(line).length;
+  if (length > maxLength || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(line)) return undefined;
+  return line;
+}
+
+/** ISO-2 country code from the shared known-country set, or undefined. */
+export function validateCountry(value) {
+  return normalizeCountryCode(value);
 }
 
 export function isAllowedOrigin(origin, allowedOrigins) {
@@ -140,6 +156,11 @@ export function publicUser(row) {
     name: row.name,
     email: row.email,
     phone: row.phone ?? null,
+    addressLine1: row.address_line1 ?? null,
+    addressLine2: row.address_line2 ?? null,
+    city: row.city ?? null,
+    postalCode: row.postal_code ?? null,
+    country: row.country ?? null,
     marketingConsent: Boolean(row.marketing_consent),
     emailVerified: Boolean(row.verified_at),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,

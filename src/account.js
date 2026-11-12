@@ -1,4 +1,5 @@
-import { renderPhoneField, phoneValueFromForm } from './phone-field.js';
+import { renderCountrySelect, renderPhoneField, phoneValueFromForm } from './phone-field.js';
+import { splitPhoneNumber } from '../shared/phone.js';
 
 const API_PREFIX = '/api/auth';
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
@@ -52,6 +53,10 @@ function safeErrorMessage(payload, fallback = 'Something went wrong. Please try 
     try_again_later: 'Too many attempts. Please wait 15 minutes before trying again.',
     invalid_verification: 'This verification link or password could not be confirmed.',
     invalid_reset: 'This reset link is invalid or expired, or the new password is too easy to guess.',
+    invalid_profile: 'Check your details and try again.',
+    invalid_password: 'Choose a less common password with 15–128 characters.',
+    invalid_credentials: 'That password could not be confirmed. Please try again.',
+    email_taken: 'That email address is already used by another account.',
     internal_error: 'The account service is temporarily unavailable. Please try again later.',
   };
   if (typeof payload?.error === 'string' && messages[payload.error]) return messages[payload.error];
@@ -88,7 +93,7 @@ async function getApi(path) {
   return payload;
 }
 
-async function postApi(path, body, { sessionCsrf = true } = {}) {
+async function postApi(path, body, { sessionCsrf = true, method = 'POST' } = {}) {
   // Authenticated state changes use a fresh session-bound CSRF token. Signup
   // is public and uses the server's strict Origin/JSON checks instead.
   const csrf = sessionCsrf ? await getApi('/csrf') : null;
@@ -98,7 +103,7 @@ async function postApi(path, body, { sessionCsrf = true } = {}) {
   };
   if (sessionCsrf) headers['X-CSRF-Token'] = typeof csrf?.csrfToken === 'string' ? csrf.csrfToken : '';
   const response = await fetch(`${API_PREFIX}${path}`, {
-    method: 'POST',
+    method,
     credentials: sessionCsrf ? 'include' : 'omit',
     headers,
     body: JSON.stringify(body),
@@ -111,6 +116,10 @@ async function postApi(path, body, { sessionCsrf = true } = {}) {
     throw error;
   }
   return payload;
+}
+
+function putApi(path, body) {
+  return postApi(path, body, { method: 'PUT' });
 }
 
 function field(id, label, type, options = {}) {
@@ -131,11 +140,12 @@ function field(id, label, type, options = {}) {
 }
 
 function passwordField(id, label, autocomplete, options = {}) {
+  const { name = id, required = true, minlength = 15 } = options;
   return `
     <div class="account-field account-password-field">
-      <label for="${id}">${label} <span aria-hidden="true">*</span></label>
+      <label for="${id}">${label}${required ? ' <span aria-hidden="true">*</span>' : ''}</label>
       <div class="account-password-wrap">
-        <input id="${id}" name="${options.name || id}" type="password" autocomplete="${autocomplete}" required minlength="15" maxlength="128" />
+        <input id="${id}" name="${name}" type="password" autocomplete="${autocomplete}"${required ? ' required' : ''}${minlength ? ` minlength="${minlength}"` : ''} maxlength="128" />
         <button type="button" class="account-password-toggle" data-password-toggle="${id}" aria-controls="${id}" aria-pressed="false">Show</button>
       </div>
     </div>`;
@@ -294,18 +304,55 @@ function renderAccount() {
     <section class="account-page" data-account-page data-account-mode="account">
       <div class="account-card account-profile-card">
         ${accountLinks()}
-        ${accountFormIntro('Your private edit', 'Your account', 'Your profile is loaded from the account service. Nothing is read from browser storage.')}
+        ${accountFormIntro('Your private edit', 'Your account', 'Update your details, keep a delivery address on file, or change your password below. Nothing is read from browser storage.')}
         <div class="account-loading" data-account-loading role="status" aria-live="polite">Checking your account…</div>
         <div class="account-logged-out" data-account-logged-out hidden>
           <p>You are currently signed out.</p>
           <a class="button button-dark" href="#signin">Sign in</a>
         </div>
         <div class="account-profile" data-account-profile hidden>
+          <form class="account-form" data-account-form="profile" novalidate>
+            <h2 class="account-section-title">Your details</h2>
+            ${field('account-profile-name', 'Name', 'text', { name: 'name', autocomplete: 'name', required: true, maxlength: 120 })}
+            ${field('account-profile-email', 'Email address', 'email', { name: 'email', autocomplete: 'email', required: true, maxlength: 254 })}
+            ${renderPhoneField({ id: 'account-profile-phone', name: 'phone', label: 'Phone (optional)' })}
+            ${passwordField('account-profile-current-password', 'Current password', 'current-password', { name: 'currentPassword', required: false, minlength: '' })}
+            <p class="account-help">The current password is only required when you change your email address.</p>
+            <label class="account-check">
+              <input id="account-profile-marketing" name="marketingConsent" type="checkbox" value="true" />
+              <span>Send me occasional notes from the atelier.</span>
+            </label>
+            ${accountStatus()}
+            <button class="button button-dark account-submit" type="submit" data-account-submit>Save details</button>
+          </form>
+          <div class="account-secondary-card">
+            <h2 class="account-section-title">Delivery address</h2>
+            <p class="account-help" data-account-address-empty>No delivery address yet. Save one to keep it on file.</p>
+            <form class="account-form" data-account-form="address" novalidate>
+              ${field('account-address-line1', 'Street address', 'text', { name: 'addressLine1', autocomplete: 'address-line1', maxlength: 200 })}
+              ${field('account-address-line2', 'Apartment, suite (optional)', 'text', { name: 'addressLine2', autocomplete: 'address-line2', maxlength: 200 })}
+              ${field('account-address-city', 'City', 'text', { name: 'city', autocomplete: 'address-level2', maxlength: 120 })}
+              ${field('account-address-postal', 'Postal code', 'text', { name: 'postalCode', autocomplete: 'postal-code', maxlength: 20 })}
+              ${renderCountrySelect({ id: 'account-address-country', name: 'country', label: 'Country' })}
+              ${accountStatus()}
+              <div class="account-actions-row">
+                <button class="button button-dark account-submit" type="submit" data-account-submit>Save address</button>
+                <button class="button button-ghost" type="button" data-account-address-remove hidden>Remove address</button>
+              </div>
+            </form>
+          </div>
+          <div class="account-secondary-card">
+            <h2 class="account-section-title">Change password</h2>
+            <form class="account-form" data-account-form="password" novalidate>
+              ${passwordField('account-password-current', 'Current password', 'current-password', { name: 'currentPassword' })}
+              ${passwordField('account-password-new', 'New password', 'new-password', { name: 'password' })}
+              ${passwordField('account-password-repeat', 'Repeat new password', 'new-password', { name: 'passwordRepeat' })}
+              <p class="account-help">Use at least 15 characters. Common passwords are rejected by the server. Other devices are signed out after the change.</p>
+              ${accountStatus()}
+              <button class="button button-dark account-submit" type="submit" data-account-submit>Change password</button>
+            </form>
+          </div>
           <dl class="account-details">
-            <div><dt>Name</dt><dd data-profile-name></dd></div>
-            <div><dt>Email</dt><dd data-profile-email></dd></div>
-            <div><dt>Phone</dt><dd data-profile-phone></dd></div>
-            <div><dt>Marketing notes</dt><dd data-profile-marketing></dd></div>
             <div><dt>Created</dt><dd data-profile-created></dd></div>
             <div><dt>Sheet sync</dt><dd data-profile-sync></dd></div>
           </dl>
@@ -325,7 +372,7 @@ function renderPrivacy() {
         ${accountFormIntro('The clear version', 'Privacy, plainly explained', 'Here is how SilkItElegantly handles the information you provide when creating an account.')}
         <div class="account-privacy-copy">
           <h2>What we keep</h2>
-          <p>Your name, email, optional phone number, customer ID, signup date, email-verification state, and marketing consent belong in the protected account database. Passwords are not sent to the sheet; the service stores only password hashes in the database.</p>
+          <p>Your name, email, optional phone number, customer ID, signup date, email-verification state, marketing consent, and an optional saved delivery address belong in the protected account database. Passwords are not sent to the sheet; the service stores only password hashes in the database. The delivery address never leaves the database.</p>
           <h2>What may be synchronized</h2>
           <p>Selected non-secret account details may be synchronized to SilkItElegantly’s restricted Google Sheet for customer administration. The database remains the account record. A sheet outage should not make a sign-in look successful or bypass account security.</p>
           <h2>Messages from us</h2>
@@ -521,6 +568,121 @@ async function handleResendVerification(form, root) {
   }
 }
 
+function profileValues(form) {
+  const values = new FormData(form);
+  return {
+    name: String(values.get('name') || '').trim(),
+    email: String(values.get('email') || '').trim(),
+    currentPassword: String(values.get('currentPassword') || ''),
+    marketingConsent: values.get('marketingConsent') === 'true',
+  };
+}
+
+async function handleProfileSave(form, root) {
+  if (!form.checkValidity()) {
+    form.reportValidity();
+    return;
+  }
+  const phone = phoneValueFromForm(form, 'phone');
+  if (!phone.ok) {
+    setStatus(form, phone.message, 'error');
+    phone.focus?.();
+    return;
+  }
+  const values = profileValues(form);
+  const emailChanged = Boolean(form.dataset.initialEmail) && values.email.toLowerCase() !== form.dataset.initialEmail;
+  if (emailChanged && !values.currentPassword) {
+    setStatus(form, 'Enter your current password to change your email address.', 'error');
+    form.querySelector('[name="currentPassword"]')?.focus();
+    return;
+  }
+  setBusy(form, true);
+  try {
+    const payload = await putApi('/profile', {
+      name: values.name,
+      email: values.email,
+      phone: phone.value,
+      marketingConsent: values.marketingConsent,
+      ...(emailChanged ? { currentPassword: values.currentPassword } : {}),
+    });
+    const profile = root.querySelector('[data-account-profile]');
+    if (payload?.user) populateProfileForms(profile, payload.user);
+    setStatus(form, 'Your details were saved.', 'success');
+  } catch (error) {
+    setStatus(form, error.message, 'error');
+  } finally {
+    setBusy(form, false);
+  }
+}
+
+function addressValues(form) {
+  const values = new FormData(form);
+  return {
+    addressLine1: String(values.get('addressLine1') || '').trim(),
+    addressLine2: String(values.get('addressLine2') || '').trim(),
+    city: String(values.get('city') || '').trim(),
+    postalCode: String(values.get('postalCode') || '').trim(),
+    country: String(values.get('country') || '').trim(),
+  };
+}
+
+async function handleAddressSave(form, root) {
+  const values = addressValues(form);
+  const clearing = !values.addressLine1 && !values.addressLine2 && !values.city && !values.postalCode && !values.country;
+  if (!clearing) {
+    const required = [
+      ['account-address-line1', values.addressLine1, 'Enter your street address.'],
+      ['account-address-city', values.city, 'Enter your city.'],
+      ['account-address-postal', values.postalCode, 'Enter your postal code.'],
+      ['account-address-country', values.country, 'Choose your country.'],
+    ].find((entry) => !entry[1]);
+    if (required) {
+      setStatus(form, required[2], 'error');
+      document.getElementById(required[0])?.focus();
+      return;
+    }
+  }
+  setBusy(form, true);
+  try {
+    const payload = await putApi('/address', values);
+    const profile = root.querySelector('[data-account-profile]');
+    if (payload?.user) populateProfileForms(profile, payload.user);
+    setStatus(form, clearing ? 'Delivery address removed.' : 'Delivery address saved.', 'success');
+  } catch (error) {
+    setStatus(form, error.message, 'error');
+  } finally {
+    setBusy(form, false);
+  }
+}
+
+async function handleChangePassword(form) {
+  if (!form.checkValidity() || !validatePasswordPair(form, form)) {
+    form.reportValidity();
+    return;
+  }
+  const values = new FormData(form);
+  const currentPassword = String(values.get('currentPassword') || '');
+  if (!currentPassword) {
+    setStatus(form, 'Enter your current password first.', 'error');
+    form.querySelector('[name="currentPassword"]')?.focus();
+    return;
+  }
+  setBusy(form, true);
+  try {
+    await postApi('/change-password', {
+      currentPassword,
+      password: String(values.get('password') || ''),
+    });
+    form.reset();
+    clearPasswords(form);
+    setStatus(form, 'Your password has been changed. Other devices are signed out.', 'success');
+  } catch (error) {
+    setStatus(form, error.message, 'error');
+  } finally {
+    setBusy(form, false);
+  }
+}
+
 async function handleForgotPassword(form, root) {
   if (!form.checkValidity()) {
     form.reportValidity();
@@ -614,6 +776,61 @@ async function mountSignup(root) {
   }
 }
 
+function populateProfileForms(profile, user) {
+  if (!profile || !user) return;
+
+  const profileForm = profile.querySelector('[data-account-form="profile"]');
+  if (profileForm) {
+    const setName = profileForm.querySelector('[name="name"]');
+    const setEmail = profileForm.querySelector('[name="email"]');
+    const setMarketing = profileForm.querySelector('[name="marketingConsent"]');
+    if (setName) setName.value = typeof user.name === 'string' ? user.name : '';
+    if (setEmail) setEmail.value = typeof user.email === 'string' ? user.email : '';
+    if (setMarketing) setMarketing.checked = user.marketingConsent === true;
+    profileForm.dataset.initialEmail = typeof user.email === 'string' ? user.email.toLowerCase() : '';
+
+    const phone = splitPhoneNumber(user.phone);
+    const phoneInput = profileForm.querySelector('[name="phone"]');
+    const phoneCountry = profileForm.querySelector('[data-phone-country="phone"]');
+    const phoneError = profileForm.querySelector('[data-phone-error="phone"]');
+    if (phoneInput) phoneInput.value = phone ? phone.national : '';
+    if (phoneCountry) phoneCountry.value = phone ? phone.iso2 : '';
+    if (phoneError) {
+      phoneError.hidden = true;
+      phoneError.textContent = '';
+    }
+    // The optional current-password field resets every refresh; it is only
+    // needed transiently to confirm an email change.
+    const currentPassword = profileForm.querySelector('[name="currentPassword"]');
+    if (currentPassword) currentPassword.value = '';
+  }
+
+  const addressForm = profile.querySelector('[data-account-form="address"]');
+  if (addressForm) {
+    const hasAddress = typeof user.addressLine1 === 'string' && user.addressLine1.trim().length > 0;
+    const emptyNote = profile.querySelector('[data-account-address-empty]');
+    if (emptyNote) emptyNote.hidden = hasAddress;
+    const removeButton = profile.querySelector('[data-account-address-remove]');
+    if (removeButton) removeButton.hidden = !hasAddress;
+    const setValue = (name, value) => {
+      const input = addressForm.querySelector(`[name="${name}"]`);
+      if (input) input.value = value ?? '';
+    };
+    setValue('addressLine1', user.addressLine1);
+    setValue('addressLine2', user.addressLine2);
+    setValue('city', user.city);
+    setValue('postalCode', user.postalCode);
+    setValue('country', user.country);
+  }
+
+  const setMeta = (name, value) => {
+    const node = profile.querySelector(`[data-profile-${name}]`);
+    if (node) node.textContent = value;
+  };
+  setMeta('created', formatCreationDate(user.createdAt));
+  setMeta('sync', safeSyncStatus(user.sheetSyncStatus));
+}
+
 async function mountAccountProfile(root) {
   const loading = root.querySelector('[data-account-loading]');
   const loggedOut = root.querySelector('[data-account-logged-out]');
@@ -632,18 +849,33 @@ async function mountAccountProfile(root) {
       return;
     }
 
-    profile.querySelector('[data-profile-name]').textContent = typeof user.name === 'string' ? user.name : 'Not available';
-    profile.querySelector('[data-profile-email]').textContent = typeof user.email === 'string' ? user.email : 'Not available';
-    profile.querySelector('[data-profile-phone]').textContent = typeof user.phone === 'string' && user.phone.trim() ? user.phone : 'Not added';
-    profile.querySelector('[data-profile-marketing]').textContent = user.marketingConsent === true ? 'Enabled' : 'Not enabled';
-    profile.querySelector('[data-profile-created]').textContent = formatCreationDate(user.createdAt);
-    profile.querySelector('[data-profile-sync]').textContent = safeSyncStatus(user.sheetSyncStatus);
+    populateProfileForms(profile, user);
     profile.hidden = false;
   } catch (error) {
     loading.hidden = true;
     loggedOut.hidden = false;
     setProfileStatus(root, 'We could not load your account right now. Please sign in again.', 'error');
   }
+}
+
+function wireAddressRemove(root) {
+  const button = root.querySelector('[data-account-address-remove]');
+  const form = root.querySelector('[data-account-form="address"]');
+  if (!button || !form || button.dataset.accountRemoveWired === 'true') return;
+  button.dataset.accountRemoveWired = 'true';
+  button.addEventListener('click', async () => {
+    setBusy(form, true);
+    try {
+      const payload = await putApi('/address', { addressLine1: '', addressLine2: '', city: '', postalCode: '', country: '' });
+      const profile = root.querySelector('[data-account-profile]');
+      if (payload?.user) populateProfileForms(profile, payload.user);
+      setStatus(form, 'Delivery address removed.', 'success');
+    } catch (error) {
+      setStatus(form, error.message, 'error');
+    } finally {
+      setBusy(form, false);
+    }
+  });
 }
 
 async function mountLogout(root) {
@@ -679,12 +911,15 @@ export async function mountAccountPage() {
       else if (formMode === 'forgot-password') handleForgotPassword(form, root);
       else if (formMode === 'reset-password') handleResetPassword(form, root);
       else if (formMode === 'resend-verification') handleResendVerification(form, root);
+      else if (formMode === 'profile') handleProfileSave(form, root);
+      else if (formMode === 'address') handleAddressSave(form, root);
+      else if (formMode === 'password') handleChangePassword(form);
     });
   });
 
   if (mode === 'signup') await mountSignup(root);
   if (mode === 'account') {
-    await Promise.all([mountAccountProfile(root), mountLogout(root)]);
+    await Promise.all([mountAccountProfile(root), mountLogout(root), wireAddressRemove(root)]);
   }
 }
 

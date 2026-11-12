@@ -63,6 +63,11 @@ const statements = [
     email VARCHAR(254) NOT NULL,
     name VARCHAR(128) NOT NULL,
     phone VARCHAR(40) NULL,
+    address_line1 VARCHAR(200) NULL,
+    address_line2 VARCHAR(200) NULL,
+    city VARCHAR(120) NULL,
+    postal_code VARCHAR(20) NULL,
+    country CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL,
     password_hash TEXT NOT NULL,
     marketing_consent TINYINT(1) NOT NULL DEFAULT 0,
     verified_at DATETIME(3) NULL,
@@ -116,3 +121,31 @@ export async function migrate(pool) {
 }
 
 export { MIGRATION_ID };
+
+// Address columns added after the initial rollout; existing databases receive
+// them through guarded ALTERs below.
+export const PROFILE_ADDRESS_MIGRATION_ID = '005-profile-address';
+
+const ADDRESS_COLUMNS = [
+  ['address_line1', 'VARCHAR(200) NULL'],
+  ['address_line2', 'VARCHAR(200) NULL'],
+  ['city', 'VARCHAR(120) NULL'],
+  ['postal_code', 'VARCHAR(20) NULL'],
+  ['country', 'CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL'],
+];
+
+export async function migrateProfileAddress(pool) {
+  if (!pool || typeof pool.query !== 'function') throw new TypeError('A MySQL pool is required');
+  const [applied] = await pool.query('SELECT id FROM schema_migrations WHERE id = ? LIMIT 1', [PROFILE_ADDRESS_MIGRATION_ID]);
+  if (applied.length) return PROFILE_ADDRESS_MIGRATION_ID;
+  for (const [column, definition] of ADDRESS_COLUMNS) {
+    const [found] = await pool.query(
+      'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1',
+      ['customers', column],
+    );
+    // Table, column and definition values above are committed constants, not visitor input.
+    if (!found.length) await pool.query(`ALTER TABLE customers ADD COLUMN ${column} ${definition}`);
+  }
+  await pool.query('INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, UTC_TIMESTAMP(3))', [PROFILE_ADDRESS_MIGRATION_ID]);
+  return PROFILE_ADDRESS_MIGRATION_ID;
+}

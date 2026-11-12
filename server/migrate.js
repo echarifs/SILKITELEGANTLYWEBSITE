@@ -1,4 +1,4 @@
-import { createPool, migrate } from './db.js';
+import { createPool, migrate, migrateProfileAddress } from './db.js';
 import { migrateMailQueue } from './mail-queue.js';
 import { migrateRetentionIndexes } from './maintenance.js';
 import { migratePayments } from './payments.js';
@@ -7,6 +7,7 @@ import { migratePaymentMailQueue } from './payment-mail-queue.js';
 const pool = createPool();
 try {
   await migrate(pool);
+  await migrateProfileAddress(pool);
   await migrateMailQueue(pool);
   await migratePayments(pool);
   await migratePaymentMailQueue(pool);

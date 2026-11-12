@@ -16,6 +16,20 @@ function countryOptionsMarkup() {
   )).join('');
 }
 
+export function renderCountrySelect({ id, name, label, selected = '' }) {
+  const options = PHONE_COUNTRIES.map(({ iso2, name: countryName }) => (
+    `<option value="${escapeHtml(iso2)}"${iso2 === selected ? ' selected' : ''}>${escapeHtml(countryName)}</option>`
+  )).join('');
+  return `
+    <div class="account-field">
+      <label for="${escapeHtml(id)}">${escapeHtml(label)}</label>
+      <select id="${escapeHtml(id)}" name="${escapeHtml(name)}" autocomplete="country-name">
+        <option value="">Select country</option>
+        ${options}
+      </select>
+    </div>`;
+}
+
 export function renderPhoneField({ id, name, label, wrapperClass = 'account-field' }) {
   return `
     <div class="${escapeHtml(wrapperClass)} phone-field">
