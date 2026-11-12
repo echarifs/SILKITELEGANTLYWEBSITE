@@ -12,8 +12,9 @@ try {
   await migratePaymentMailQueue(pool);
   await migrateRetentionIndexes(pool);
   console.log('Account, payment, email-queue, and retention schemas are ready.');
-} catch {
+} catch (error) {
   console.error('Account schema preparation failed. Check database access; no credential values are logged.');
+  if (error?.code) console.error(`Database error code: ${error.code}`);
   process.exitCode = 1;
 } finally {
   await pool.end();
