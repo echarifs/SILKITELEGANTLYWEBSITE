@@ -32,6 +32,8 @@ services:
       DATABASE_URL: mysql://silkit:${MYSQL_PASSWORD}@db:3306/silkitelegantly
       PUBLIC_APP_ORIGIN: https://silkitelegantly.com
       SMTP_URL: ${SMTP_URL}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      MAIL_FROM: ${MAIL_FROM}
     expose:
       - "3000"
     logging:
