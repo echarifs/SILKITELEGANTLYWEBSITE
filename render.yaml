@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: silkitelegantly
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PUBLIC_APP_ORIGIN
+        value: https://silkitelegantly.com
+      - key: DATABASE_URL
+        sync: false
+      - key: SMTP_URL
+        sync: false
