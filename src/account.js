@@ -331,7 +331,6 @@ function renderAccount() {
               <div><dt>Phone</dt><dd data-summary-phone></dd></div>
               <div><dt>Marketing notes</dt><dd data-summary-marketing></dd></div>
               <div><dt>Created</dt><dd data-profile-created></dd></div>
-              <div><dt>Sheet sync</dt><dd data-profile-sync></dd></div>
             </dl>
             <form class="account-form" data-account-form="profile" novalidate hidden>
               ${field('account-profile-name', 'Name', 'text', { name: 'name', autocomplete: 'name', required: true, maxlength: 120 })}
@@ -780,17 +779,6 @@ function formatCreationDate(value) {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(date);
 }
 
-function safeSyncStatus(value) {
-  const labels = {
-    synced: 'Synced',
-    pending: 'Pending',
-    failed: 'Needs attention',
-    'not-configured': 'Not configured',
-    not_configured: 'Not configured',
-  };
-  return labels[String(value || '').toLowerCase()] || 'Status unavailable';
-}
-
 async function mountSignup(root) {
   const form = root.querySelector('[data-account-form="signup"]');
   if (!form) return;
@@ -889,7 +877,6 @@ function populateProfileForms(profile, user) {
     if (node) node.textContent = value;
   };
   setMeta('created', formatCreationDate(user.createdAt));
-  setMeta('sync', safeSyncStatus(user.sheetSyncStatus));
 
   const setText = (name, value) => {
     const node = profile.querySelector(`[data-${name}]`);
