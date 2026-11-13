@@ -301,7 +301,6 @@
 .account-secondary-card {
   display: grid;
   gap: 12px;
-  margin-top: 34px;
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -340,6 +339,51 @@
 .account-profile {
   display: grid;
   gap: 24px;
+}
+
+/* Read-only section summaries with a pen button that reveals the edit form. */
+.account-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.account-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-edit-btn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.account-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.account-edit-btn[aria-expanded="true"] {
+  background: rgba(47, 37, 35, 0.06);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.account-edit-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .account-details {
@@ -489,6 +533,7 @@
 @media (prefers-reduced-motion: reduce) {
   .account-field input,
   .account-field > select,
+  .account-edit-btn,
   .account-text-link {
     transition: none;
   }

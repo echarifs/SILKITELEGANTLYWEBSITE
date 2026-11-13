@@ -258,3 +258,74 @@ test('password change posts current and new passwords and clears the inputs', as
   assert.match(form.querySelector('[data-account-status]').textContent, /password has been changed/iu);
   dom.window.close();
 });
+
+test('pen buttons reveal each edit form, cancel restores saved values, and the address summary appears once saved', async () => {
+  const dom = setup('#account');
+  globalThis.fetch = async (url) => {
+    const payload = url.endsWith('/me') ? { user: PROFILE_USER } : { csrfToken: 'f'.repeat(64) };
+    return { ok: true, status: 200, json: async () => payload };
+  };
+  document.getElementById('app').innerHTML = renderAccountPage('account');
+  await mountAccountPage();
+  await waitUntil(() => !document.querySelector('[data-account-profile]').hidden);
+
+  const panel = (key) => document.querySelector(`[data-account-panel="${key}"]`);
+  const editButton = (key) => panel(key).querySelector('[data-account-edit]');
+  const formOf = (key) => panel(key).querySelector('[data-account-form]');
+
+  for (const key of ['details', 'address', 'password']) {
+    assert.equal(formOf(key).hidden, true, `${key} form starts closed`);
+    editButton(key).click();
+    assert.equal(formOf(key).hidden, false, `${key} form opens from the pen`);
+    assert.equal(editButton(key).getAttribute('aria-expanded'), 'true');
+    editButton(key).click();
+    assert.equal(formOf(key).hidden, true, `${key} form closes from the pen again`);
+    assert.equal(editButton(key).getAttribute('aria-expanded'), 'false');
+  }
+
+  const summary = document.querySelector('[data-account-summary="details"]');
+  assert.equal(summary.hidden, false, 'details summary returns after closing the panel');
+  assert.match(summary.textContent, /test@example\.invalid/u);
+  assert.match(summary.textContent, /Not added/u);
+  assert.equal(document.querySelector('[data-account-summary="address"]').hidden, true);
+
+  editButton('details').click();
+  const detailsForm = formOf('details');
+  detailsForm.querySelector('[name="name"]').value = 'Changed Name';
+  panel('details').querySelector('[data-account-cancel]').click();
+  assert.equal(detailsForm.querySelector('[name="name"]').value, PROFILE_USER.name);
+  assert.equal(summary.textContent.includes('Changed Name'), false);
+  dom.window.close();
+});
+
+test('a saved delivery address shows its summary and the empty note stays hidden while editing', async () => {
+  const dom = setup('#account');
+  const savedUser = {
+    ...PROFILE_USER,
+    addressLine1: '12 Silk Road',
+    addressLine2: 'Riad wing',
+    city: 'Nouakchott',
+    postalCode: '0000',
+    country: 'MR',
+  };
+  globalThis.fetch = async (url) => {
+    const payload = url.endsWith('/me') ? { user: savedUser } : { csrfToken: 'f'.repeat(64) };
+    return { ok: true, status: 200, json: async () => payload };
+  };
+  document.getElementById('app').innerHTML = renderAccountPage('account');
+  await mountAccountPage();
+  await waitUntil(() => !document.querySelector('[data-account-profile]').hidden);
+
+  const addressSummary = document.querySelector('[data-account-summary="address"]');
+  assert.equal(addressSummary.hidden, false);
+  assert.match(document.querySelector('[data-address-street]').textContent, /12 Silk Road/u);
+  assert.match(document.querySelector('[data-address-country]').textContent, /Mauritania/u);
+  assert.equal(document.querySelector('[data-address-row="line2"]').hidden, false);
+
+  const addressPanel = document.querySelector('[data-account-panel="address"]');
+  addressPanel.querySelector('[data-account-edit]').click();
+  assert.equal(addressSummary.hidden, true);
+  assert.equal(addressPanel.querySelector('[data-account-address-empty]').hidden, true);
+  assert.equal(addressPanel.querySelector('[name="addressLine2"]').value, 'Riad wing');
+  dom.window.close();
+});

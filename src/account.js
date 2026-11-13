@@ -1,8 +1,10 @@
 import { renderCountrySelect, renderPhoneField, phoneValueFromForm } from './phone-field.js';
-import { splitPhoneNumber } from '../shared/phone.js';
+import { PHONE_COUNTRIES, splitPhoneNumber } from '../shared/phone.js';
 
 const API_PREFIX = '/api/auth';
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
+// Latest signed-in profile, used to restore prefilled values when a panel is cancelled.
+let latestProfileUser = null;
 const pendingTokens = {
   verifyEmail: null,
   resetPassword: null,
@@ -299,36 +301,66 @@ function renderResetPassword() {
     </section>`;
 }
 
+const PEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M17 3a2.83 2.83 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>';
+
+function panelHead(title, editLabel) {
+  return `
+    <div class="account-panel-head">
+      <h2 class="account-section-title">${title}</h2>
+      <button class="account-edit-btn" type="button" data-account-edit aria-expanded="false" aria-label="${editLabel}">${PEN_ICON}</button>
+    </div>`;
+}
+
 function renderAccount() {
   return `
     <section class="account-page" data-account-page data-account-mode="account">
       <div class="account-card account-profile-card">
         ${accountLinks()}
-        ${accountFormIntro('Your private edit', 'Your account', 'Update your details, keep a delivery address on file, or change your password below. Nothing is read from browser storage.')}
+        ${accountFormIntro('Your private edit', 'Your account', 'Select the pen next to a section to edit it. Nothing is read from browser storage.')}
         <div class="account-loading" data-account-loading role="status" aria-live="polite">Checking your account…</div>
         <div class="account-logged-out" data-account-logged-out hidden>
           <p>You are currently signed out.</p>
           <a class="button button-dark" href="#signin">Sign in</a>
         </div>
         <div class="account-profile" data-account-profile hidden>
-          <form class="account-form" data-account-form="profile" novalidate>
-            <h2 class="account-section-title">Your details</h2>
-            ${field('account-profile-name', 'Name', 'text', { name: 'name', autocomplete: 'name', required: true, maxlength: 120 })}
-            ${field('account-profile-email', 'Email address', 'email', { name: 'email', autocomplete: 'email', required: true, maxlength: 254 })}
-            ${renderPhoneField({ id: 'account-profile-phone', name: 'phone', label: 'Phone (optional)' })}
-            ${passwordField('account-profile-current-password', 'Current password', 'current-password', { name: 'currentPassword', required: false, minlength: '' })}
-            <p class="account-help">The current password is only required when you change your email address.</p>
-            <label class="account-check">
-              <input id="account-profile-marketing" name="marketingConsent" type="checkbox" value="true" />
-              <span>Send me occasional notes from the atelier.</span>
-            </label>
-            ${accountStatus()}
-            <button class="button button-dark account-submit" type="submit" data-account-submit>Save details</button>
-          </form>
-          <div class="account-secondary-card">
-            <h2 class="account-section-title">Delivery address</h2>
-            <p class="account-help" data-account-address-empty>No delivery address yet. Save one to keep it on file.</p>
-            <form class="account-form" data-account-form="address" novalidate>
+          <section class="account-panel" data-account-panel="details">
+            ${panelHead('Your details', 'Edit your details')}
+            <dl class="account-details" data-account-summary="details">
+              <div><dt>Name</dt><dd data-summary-name></dd></div>
+              <div><dt>Email</dt><dd data-summary-email></dd></div>
+              <div><dt>Phone</dt><dd data-summary-phone></dd></div>
+              <div><dt>Marketing notes</dt><dd data-summary-marketing></dd></div>
+              <div><dt>Created</dt><dd data-profile-created></dd></div>
+              <div><dt>Sheet sync</dt><dd data-profile-sync></dd></div>
+            </dl>
+            <form class="account-form" data-account-form="profile" novalidate hidden>
+              ${field('account-profile-name', 'Name', 'text', { name: 'name', autocomplete: 'name', required: true, maxlength: 120 })}
+              ${field('account-profile-email', 'Email address', 'email', { name: 'email', autocomplete: 'email', required: true, maxlength: 254 })}
+              ${renderPhoneField({ id: 'account-profile-phone', name: 'phone', label: 'Phone (optional)' })}
+              ${passwordField('account-profile-current-password', 'Current password', 'current-password', { name: 'currentPassword', required: false, minlength: '' })}
+              <p class="account-help">The current password is only required when you change your email address.</p>
+              <label class="account-check">
+                <input id="account-profile-marketing" name="marketingConsent" type="checkbox" value="true" />
+                <span>Send me occasional notes from the atelier.</span>
+              </label>
+              ${accountStatus()}
+              <div class="account-actions-row">
+                <button class="button button-dark account-submit" type="submit" data-account-submit>Save details</button>
+                <button class="button button-ghost" type="button" data-account-cancel>Cancel</button>
+              </div>
+            </form>
+          </section>
+          <section class="account-panel account-secondary-card" data-account-panel="address">
+            ${panelHead('Delivery address', 'Edit delivery address')}
+            <p class="account-help" data-account-address-empty>No delivery address yet. Select the pen to add one.</p>
+            <dl class="account-details" data-account-summary="address">
+              <div><dt>Street</dt><dd data-address-street></dd></div>
+              <div data-address-row="line2"><dt>Detail</dt><dd data-address-detail></dd></div>
+              <div><dt>City</dt><dd data-address-city></dd></div>
+              <div><dt>Postal code</dt><dd data-address-postal></dd></div>
+              <div><dt>Country</dt><dd data-address-country></dd></div>
+            </dl>
+            <form class="account-form" data-account-form="address" novalidate hidden>
               ${field('account-address-line1', 'Street address', 'text', { name: 'addressLine1', autocomplete: 'address-line1', maxlength: 200 })}
               ${field('account-address-line2', 'Apartment, suite (optional)', 'text', { name: 'addressLine2', autocomplete: 'address-line2', maxlength: 200 })}
               ${field('account-address-city', 'City', 'text', { name: 'city', autocomplete: 'address-level2', maxlength: 120 })}
@@ -338,24 +370,24 @@ function renderAccount() {
               <div class="account-actions-row">
                 <button class="button button-dark account-submit" type="submit" data-account-submit>Save address</button>
                 <button class="button button-ghost" type="button" data-account-address-remove hidden>Remove address</button>
+                <button class="button button-ghost" type="button" data-account-cancel>Cancel</button>
               </div>
             </form>
-          </div>
-          <div class="account-secondary-card">
-            <h2 class="account-section-title">Change password</h2>
-            <form class="account-form" data-account-form="password" novalidate>
+          </section>
+          <section class="account-panel account-secondary-card" data-account-panel="password">
+            ${panelHead('Change password', 'Change your password')}
+            <p class="account-help">Use at least 15 characters. Common passwords are rejected by the server. Other devices are signed out after the change.</p>
+            <form class="account-form" data-account-form="password" novalidate hidden>
               ${passwordField('account-password-current', 'Current password', 'current-password', { name: 'currentPassword' })}
               ${passwordField('account-password-new', 'New password', 'new-password', { name: 'password' })}
               ${passwordField('account-password-repeat', 'Repeat new password', 'new-password', { name: 'passwordRepeat' })}
-              <p class="account-help">Use at least 15 characters. Common passwords are rejected by the server. Other devices are signed out after the change.</p>
               ${accountStatus()}
-              <button class="button button-dark account-submit" type="submit" data-account-submit>Change password</button>
+              <div class="account-actions-row">
+                <button class="button button-dark account-submit" type="submit" data-account-submit>Change password</button>
+                <button class="button button-ghost" type="button" data-account-cancel>Cancel</button>
+              </div>
             </form>
-          </div>
-          <dl class="account-details">
-            <div><dt>Created</dt><dd data-profile-created></dd></div>
-            <div><dt>Sheet sync</dt><dd data-profile-sync></dd></div>
-          </dl>
+          </section>
           <p class="account-help">Account credentials are kept in the protected account database. Non-secret account details may be synchronized to the brand’s restricted Google Sheet.</p>
           <p class="account-status" data-account-profile-status role="status" aria-live="polite"></p>
           <button class="button button-ghost" type="button" data-account-logout>Sign out</button>
@@ -776,8 +808,14 @@ async function mountSignup(root) {
   }
 }
 
+function countryDisplayName(value) {
+  const country = PHONE_COUNTRIES.find((entry) => entry.iso2 === value);
+  return country ? country.name : (value || '—');
+}
+
 function populateProfileForms(profile, user) {
   if (!profile || !user) return;
+  latestProfileUser = user;
 
   const profileForm = profile.querySelector('[data-account-form="profile"]');
   if (profileForm) {
@@ -806,10 +844,12 @@ function populateProfileForms(profile, user) {
   }
 
   const addressForm = profile.querySelector('[data-account-form="address"]');
+  const addressOpen = addressForm ? !addressForm.hidden : false;
+  const hasAddress = typeof user.addressLine1 === 'string' && user.addressLine1.trim().length > 0;
   if (addressForm) {
-    const hasAddress = typeof user.addressLine1 === 'string' && user.addressLine1.trim().length > 0;
+    // While the edit form is open, the summary stays out of the way.
     const emptyNote = profile.querySelector('[data-account-address-empty]');
-    if (emptyNote) emptyNote.hidden = hasAddress;
+    if (emptyNote) emptyNote.hidden = addressOpen || hasAddress;
     const removeButton = profile.querySelector('[data-account-address-remove]');
     if (removeButton) removeButton.hidden = !hasAddress;
     const setValue = (name, value) => {
@@ -821,6 +861,27 @@ function populateProfileForms(profile, user) {
     setValue('city', user.city);
     setValue('postalCode', user.postalCode);
     setValue('country', user.country);
+  } else {
+    const emptyNote = profile.querySelector('[data-account-address-empty]');
+    if (emptyNote) emptyNote.hidden = hasAddress;
+  }
+
+  const addressSummary = profile.querySelector('[data-account-summary="address"]');
+  if (addressSummary) {
+    addressSummary.hidden = !hasAddress || addressOpen;
+    if (hasAddress) {
+      const setText = (name, value) => {
+        const node = profile.querySelector(`[data-${name}]`);
+        if (node) node.textContent = value;
+      };
+      setText('address-street', user.addressLine1);
+      setText('address-detail', typeof user.addressLine2 === 'string' && user.addressLine2.trim() ? user.addressLine2 : '');
+      setText('address-city', user.city || '—');
+      setText('address-postal', user.postalCode || '—');
+      setText('address-country', countryDisplayName(user.country));
+      const line2Row = profile.querySelector('[data-address-row="line2"]');
+      if (line2Row) line2Row.hidden = !(typeof user.addressLine2 === 'string' && user.addressLine2.trim().length > 0);
+    }
   }
 
   const setMeta = (name, value) => {
@@ -829,6 +890,19 @@ function populateProfileForms(profile, user) {
   };
   setMeta('created', formatCreationDate(user.createdAt));
   setMeta('sync', safeSyncStatus(user.sheetSyncStatus));
+
+  const setText = (name, value) => {
+    const node = profile.querySelector(`[data-${name}]`);
+    if (node) node.textContent = value;
+  };
+  setText('summary-name', typeof user.name === 'string' && user.name.trim() ? user.name : '—');
+  setText('summary-email', user.email || '—');
+  setText('summary-phone', user.phone || 'Not added');
+  setText('summary-marketing', user.marketingConsent === true ? 'Enabled' : 'Disabled');
+
+  const detailsForm = profile.querySelector('[data-account-form="profile"]');
+  const detailsSummary = profile.querySelector('[data-account-summary="details"]');
+  if (detailsSummary) detailsSummary.hidden = detailsForm ? !detailsForm.hidden : false;
 }
 
 async function mountAccountProfile(root) {
@@ -856,6 +930,74 @@ async function mountAccountProfile(root) {
     loggedOut.hidden = false;
     setProfileStatus(root, 'We could not load your account right now. Please sign in again.', 'error');
   }
+}
+
+function setPanelOpen(panel, open) {
+  if (!panel) return;
+  const form = panel.querySelector('[data-account-form]');
+  const button = panel.querySelector('[data-account-edit]');
+  if (form) form.hidden = !open;
+  if (button) button.setAttribute('aria-expanded', String(open));
+  if (open) {
+    panel.querySelectorAll('[data-account-summary], [data-account-address-empty]').forEach((node) => {
+      node.hidden = true;
+    });
+    const first = form?.querySelector('input, select');
+    if (first) first.focus();
+    return;
+  }
+  // Closing reveals the summaries again, based on the latest saved data.
+  const hasAddress = typeof latestProfileUser?.addressLine1 === 'string' && latestProfileUser.addressLine1.trim().length > 0;
+  const detailsSummary = panel.querySelector('[data-account-summary="details"]');
+  if (detailsSummary) detailsSummary.hidden = !latestProfileUser;
+  const addressSummary = panel.querySelector('[data-account-summary="address"]');
+  if (addressSummary) addressSummary.hidden = !hasAddress;
+  const emptyNote = panel.querySelector('[data-account-address-empty]');
+  if (emptyNote) emptyNote.hidden = hasAddress;
+}
+
+function wireEditToggles(root) {
+  root.querySelectorAll('[data-account-edit]').forEach((button) => {
+    if (button.dataset.accountEditWired === 'true') return;
+    button.dataset.accountEditWired = 'true';
+    button.addEventListener('click', () => {
+      const panel = button.closest('[data-account-panel]');
+      if (!panel) return;
+      const opening = button.getAttribute('aria-expanded') !== 'true';
+      if (!opening) closeRestoring(panel);
+      setPanelOpen(panel, opening);
+    });
+  });
+
+  root.querySelectorAll('[data-account-cancel]').forEach((cancel) => {
+    if (cancel.dataset.accountCancelWired === 'true') return;
+    cancel.dataset.accountCancelWired = 'true';
+    cancel.addEventListener('click', () => {
+      const panel = cancel.closest('[data-account-panel]');
+      if (!panel) return;
+      closeRestoring(panel);
+      const button = panel.querySelector('[data-account-edit]');
+      if (button) button.focus();
+    });
+  });
+}
+
+// Closing a panel always reveals up-to-date summary values and resets any
+// half-typed form back to the saved profile.
+function closeRestoring(panel) {
+  const profile = panel.closest('[data-account-profile]');
+  if (profile && latestProfileUser) populateProfileForms(profile, latestProfileUser);
+  const form = panel.querySelector('[data-account-form]');
+  if (form) {
+    form.dataset.submitted = 'false';
+    if (form.dataset.accountForm === 'password') {
+      form.querySelectorAll('input[type="password"]').forEach((input) => {
+        input.value = '';
+      });
+    }
+    setStatus(form, '');
+  }
+  setPanelOpen(panel, false);
 }
 
 function wireAddressRemove(root) {
@@ -919,6 +1061,7 @@ export async function mountAccountPage() {
 
   if (mode === 'signup') await mountSignup(root);
   if (mode === 'account') {
+    wireEditToggles(root);
     await Promise.all([mountAccountProfile(root), mountLogout(root), wireAddressRemove(root)]);
   }
 }
