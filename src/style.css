@@ -885,11 +885,19 @@ svg {
 
 .story-visual {
   position: relative;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 9 / 16;
   border-radius: var(--radius);
   overflow: hidden;
   background: linear-gradient(160deg, var(--plum), var(--plum-deep));
   box-shadow: var(--shadow);
+}
+
+.story-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .story-fabric {
@@ -918,6 +926,7 @@ svg {
   font-family: var(--serif);
   font-size: 1.7rem;
   color: #f6e9e6;
+  text-shadow: 0 1px 18px rgba(61, 35, 31, 0.45);
 }
 
 .story-copy h2 {
