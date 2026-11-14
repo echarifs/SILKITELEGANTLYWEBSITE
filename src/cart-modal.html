@@ -11,6 +11,10 @@
     <section class="checkout-panel" aria-label="Secure card checkout" aria-hidden="true" hidden>
       <p class="checkout-sandbox-note"><strong>Sandbox mode</strong> — no real charge. Card details are entered on YouCan Pay's secure form.</p>
       <form class="checkout-details-form">
+        <div class="checkout-identity" data-checkout-identity hidden>
+          <p class="checkout-account-summary" data-checkout-account-summary></p>
+          <button class="checkout-identity-pen" type="button" data-checkout-identity-pen aria-expanded="false" aria-label="Check your name, email, and phone">&nbsp;</button>
+        </div>
         <label>Full name
           <input type="text" name="customerName" autocomplete="name" maxlength="128" required>
         </label>
@@ -32,6 +36,41 @@
       <div class="checkout-payment-stage" hidden>
         <div id="youcanpay-element"></div>
         <button class="checkout-confirm-btn" type="button" disabled>Pay securely</button>
+      </div>
+      <div class="checkout-shipping-stage" hidden>
+        <form class="checkout-shipping-form">
+          <label>Street address
+            <input type="text" name="shippingLine1" autocomplete="address-line1" maxlength="200" required>
+          </label>
+          <label>Apartment, suite (optional)
+            <input type="text" name="shippingLine2" autocomplete="address-line2" maxlength="200">
+          </label>
+          <label>City
+            <input type="text" name="shippingCity" autocomplete="address-level2" maxlength="120" required>
+          </label>
+          <label>Postal code
+            <input type="text" name="shippingPostalCode" autocomplete="postal-code" maxlength="20" required>
+          </label>
+          <label for="checkout-shipping-country">Country</label>
+          <select id="checkout-shipping-country" class="checkout-shipping-country" name="shippingCountry" autocomplete="country-name" required>
+            <option value="">Select country</option>
+          </select>
+          <div class="phone-field checkout-shipping-phone" data-checkout-shipping-phone>
+            <label for="checkout-shipping-phone">Phone for delivery</label>
+            <div class="phone-field-controls">
+              <select class="phone-country-select" data-phone-country="shippingPhone" aria-label="Country calling code" autocomplete="country">
+                <option value="">Select country</option>
+              </select>
+              <input class="phone-number-input" id="checkout-shipping-phone" name="shippingPhone" type="tel" autocomplete="tel-national" maxlength="40" inputmode="tel" placeholder="Local phone number">
+            </div>
+            <p class="phone-field-error" data-phone-error="shippingPhone" role="status" aria-live="polite" hidden></p>
+          </div>
+          <label class="checkout-save-account" data-checkout-save-account hidden>
+            <input type="checkbox" name="saveAddressToAccount" value="true" />
+            <span>Save this address to my account</span>
+          </label>
+          <button class="checkout-shipping-submit" type="submit">Save delivery details</button>
+        </form>
       </div>
       <p class="checkout-status" role="status" aria-live="polite"></p>
       <button class="checkout-back" type="button">Back to cart</button>

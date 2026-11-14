@@ -9,7 +9,9 @@ import {
   normalizeEmail,
   requestOrigin,
   setSecurityHeaders,
+  validateCountry,
   validateName,
+  validateOptionalAddressLine,
   validatePhone,
   validBodyObject,
 } from './security.js';
@@ -47,6 +49,12 @@ export async function migratePayments(pool) {
       updated_at DATETIME(3) NOT NULL,
       paid_at DATETIME(3) NULL,
       refunded_at DATETIME(3) NULL,
+      shipping_line1 VARCHAR(200) NULL,
+      shipping_line2 VARCHAR(200) NULL,
+      shipping_city VARCHAR(120) NULL,
+      shipping_postal_code VARCHAR(20) NULL,
+      shipping_country CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL,
+      shipping_set_at DATETIME(3) NULL,
       CONSTRAINT store_orders_status_chk CHECK (status IN ('pending_payment', 'paid', 'payment_failed', 'partially_refunded', 'refunded')),
       CONSTRAINT store_orders_sandbox_chk CHECK (provider_mode = 'sandbox'),
       CONSTRAINT store_orders_amount_chk CHECK (amount_minor > 0),
@@ -66,6 +74,34 @@ export async function migratePayments(pool) {
     ) ENGINE=InnoDB`);
   await pool.query('INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, UTC_TIMESTAMP(3))', [PAYMENTS_MIGRATION_ID]);
   return PAYMENTS_MIGRATION_ID;
+}
+
+export const ORDER_SHIPPING_MIGRATION_ID = '006-order-shipping';
+
+const SHIPPING_COLUMN_DEFS = [
+  ['shipping_line1', 'shipping_line1 VARCHAR(200) NULL'],
+  ['shipping_line2', 'shipping_line2 VARCHAR(200) NULL'],
+  ['shipping_city', 'shipping_city VARCHAR(120) NULL'],
+  ['shipping_postal_code', 'shipping_postal_code VARCHAR(20) NULL'],
+  ['shipping_country', 'shipping_country CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL'],
+  ['shipping_set_at', 'shipping_set_at DATETIME(3) NULL'],
+];
+
+export async function migrateOrderShipping(pool) {
+  if (!pool || typeof pool.query !== 'function') throw new TypeError('A MySQL pool is required');
+  const [applied] = await pool.query('SELECT id FROM schema_migrations WHERE id = ? LIMIT 1', [ORDER_SHIPPING_MIGRATION_ID]);
+  if (applied.length === 0) {
+    for (const [column, definition] of SHIPPING_COLUMN_DEFS) {
+      const [existing] = await pool.query(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_orders' AND COLUMN_NAME = ?`,
+        [column],
+      );
+      if (existing.length === 0) await pool.query(`ALTER TABLE store_orders ADD COLUMN ${definition}`);
+    }
+  }
+  await pool.query('INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, UTC_TIMESTAMP(3))', [ORDER_SHIPPING_MIGRATION_ID]);
+  return ORDER_SHIPPING_MIGRATION_ID;
 }
 
 export function buildTrustedOrder(items) {
@@ -158,6 +194,26 @@ function normalizedOrigins(allowedOrigins) {
   return result;
 }
 
+/** Optional shipping block: null = not supplied, undefined = invalid. */
+function shippingFromBody(value) {
+  if (value === undefined || value === null) return null;
+  if (!validBodyObject(value)) return undefined;
+  const line1 = validateOptionalAddressLine(value.line1);
+  const line2 = validateOptionalAddressLine(value.line2);
+  const city = validateOptionalAddressLine(value.city, 120);
+  const postalCode = validateOptionalAddressLine(value.postalCode, 20);
+  const country = validateCountry(value.country);
+  if (line1 === undefined || line2 === undefined || city === undefined
+      || postalCode === undefined || country === undefined) return undefined;
+  // A delivered parcel needs a street, city, postal code, and country.
+  if (!line1 || !city || !postalCode || !country) return undefined;
+  return { line1, line2, city, postalCode, country };
+}
+
+function shippingRateKey(kind, value) {
+  return `rate:shipping:${kind}:${hashToken(value).toString('hex')}`;
+}
+
 export function createPaymentsRouter({
   pool,
   allowedOrigins = new Set(),
@@ -181,6 +237,8 @@ export function createPaymentsRouter({
       const email = normalizeEmail(req.body.customer.email);
       const phone = validatePhone(req.body.customer.phone);
       if (!name || !email || phone === undefined) return res.status(400).json({ error: 'invalid_checkout' });
+      const shipping = shippingFromBody(req.body.shipping);
+      if (shipping === undefined) return res.status(400).json({ error: 'invalid_checkout' });
       if (!await checkoutRateAllowed(pool, req, email)) return res.status(429).json({ error: 'try_again_later' });
 
       let order;
@@ -188,11 +246,15 @@ export function createPaymentsRouter({
       catch { return res.status(400).json({ error: 'invalid_cart' }); }
 
       const orderId = crypto.randomUUID();
+      const shippingAt = shipping ? 'UTC_TIMESTAMP(3)' : 'NULL';
       await pool.query(`
         INSERT INTO store_orders
-          (id, status, customer_name, customer_email, customer_phone, items_json, currency, amount_minor, provider, provider_mode, created_at, updated_at)
-        VALUES (?, 'pending_payment', ?, ?, ?, ?, ?, ?, 'youcanpay', 'sandbox', UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`, [
+          (id, status, customer_name, customer_email, customer_phone, items_json, currency, amount_minor, provider, provider_mode,
+           shipping_line1, shipping_line2, shipping_city, shipping_postal_code, shipping_country, shipping_set_at,
+           created_at, updated_at)
+        VALUES (?, 'pending_payment', ?, ?, ?, ?, ?, ?, 'youcanpay', 'sandbox', ?, ?, ?, ?, ?, ${shippingAt}, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`, [
         orderId, name, email, phone, JSON.stringify(order.lines), order.currency, order.amountMinor,
+        shipping?.line1 ?? null, shipping?.line2 ?? null, shipping?.city ?? null, shipping?.postalCode ?? null, shipping?.country ?? null,
       ]);
 
       let providerToken;
@@ -223,6 +285,55 @@ export function createPaymentsRouter({
         publicKey,
         mode: 'sandbox',
       });
+    } catch (error) { next(error); }
+  });
+
+  // Delivery details captured right after payment. Public like /checkout, but
+  // gated by the unguessable order id plus the payer's email; idempotent once
+  // shipping_set_at is written.
+  router.post('/shipping-details', async (req, res, next) => {
+    try {
+      if (!isAllowedOrigin(requestOrigin(req), origins)) return res.status(403).json({ error: 'request_not_authorized' });
+      if (!isJsonRequest(req)) return res.status(415).json({ error: 'json_required' });
+      if (!validBodyObject(req.body)) return res.status(400).json({ error: 'invalid_shipping' });
+      const orderId = typeof req.body.orderId === 'string' && UUID_RE.test(req.body.orderId) ? req.body.orderId : '';
+      const email = normalizeEmail(req.body.email);
+      if (!orderId || !email) return res.status(400).json({ error: 'invalid_shipping' });
+      if (!await allowRate(pool, shippingRateKey('ip', clientAddress(req)), 8)
+          || !await allowRate(pool, shippingRateKey('order', orderId), 6)) {
+        return res.status(429).json({ error: 'try_again_later' });
+      }
+      const shipping = shippingFromBody({
+        line1: req.body.line1,
+        line2: req.body.line2,
+        city: req.body.city,
+        postalCode: req.body.postalCode,
+        country: req.body.country,
+      });
+      if (!shipping) return res.status(400).json({ error: 'invalid_shipping' });
+      let shippingPhone = null;
+      if (req.body.phone !== undefined && req.body.phone !== null && req.body.phone !== '') {
+        shippingPhone = validatePhone(req.body.phone);
+        if (shippingPhone === undefined) return res.status(400).json({ error: 'invalid_shipping' });
+        shippingPhone = shippingPhone || null;
+      }
+      const [orders] = await pool.query(
+        'SELECT customer_email, status, shipping_set_at FROM store_orders WHERE id = ? LIMIT 1',
+        [orderId],
+      );
+      const order = orders[0];
+      if (!order || String(order.customer_email).toLowerCase() !== email) return res.status(404).json({ error: 'order_not_found' });
+      if (order.shipping_set_at) return res.status(409).json({ error: 'shipping_already_set' });
+      if (order.status === 'refunded' || order.status === 'partially_refunded') return res.status(409).json({ error: 'order_refunded' });
+      const [result] = await pool.query(`
+        UPDATE store_orders
+           SET shipping_line1 = ?, shipping_line2 = ?, shipping_city = ?, shipping_postal_code = ?, shipping_country = ?,
+               customer_phone = COALESCE(customer_phone, ?), shipping_set_at = UTC_TIMESTAMP(3), updated_at = UTC_TIMESTAMP(3)
+         WHERE id = ? AND shipping_set_at IS NULL`, [
+        shipping.line1, shipping.line2, shipping.city, shipping.postalCode, shipping.country, shippingPhone, orderId,
+      ]);
+      if (result.affectedRows === 0) return res.status(409).json({ error: 'shipping_already_set' });
+      return res.status(200).json({ saved: true });
     } catch (error) { next(error); }
   });
   return router;

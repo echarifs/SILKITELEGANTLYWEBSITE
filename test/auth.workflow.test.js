@@ -205,6 +205,12 @@ function createStrictMockPool() {
       assertParams(params, 5);
       const [name, phone, email, marketingConsent, userId] = params;
       const customer = customers.get(userId);
+      if (customer && email !== customer.email && customerByEmail(email)) {
+        // Mirror the customers.email UNIQUE constraint the real tables enforce.
+        const error = new Error('duplicate customer email');
+        error.code = 'ER_DUP_ENTRY';
+        throw error;
+      }
       if (customer) {
         Object.assign(customer, { name, phone, email, marketing_consent: marketingConsent });
         if (normalized.includes("sheet_sync_status = 'pending'")) customer.sheet_sync_status = 'pending';
@@ -511,7 +517,10 @@ test('account self-service covers profile edits, address save and clear, and ses
   }
 
   const account = await createVerifiedCustomer(EMAIL, OLD_PASSWORD);
-  const login = await state(agent, 'x', null).post('/auth/login').send({ email: EMAIL, password: OLD_PASSWORD });
+  // Login itself rides on the anonymous session + CSRF token issued by /auth/csrf.
+  const preAuth = await agent.get('/auth/csrf').set('Origin', ORIGIN);
+  const login = await state(agent, preAuth.body.csrfToken, preAuth.headers['set-cookie'][0])
+    .post('/auth/login').send({ email: EMAIL, password: OLD_PASSWORD });
   assert.equal(login.status, 200);
   let cookie = login.headers['set-cookie'][0];
   const csrf = await agent.get('/auth/csrf').set('Origin', ORIGIN).set('Cookie', cookie);
@@ -598,7 +607,7 @@ test('account self-service covers profile edits, address save and clear, and ses
 
   const weakPassword = await state(agent, csrfToken, cookie).post('/auth/change-password').send({
     currentPassword: OLD_PASSWORD,
-    password: 'aaabbbcccdddeee',
+    password: 'aaaaaaaaaaaaaaa',
   });
   assert.equal(weakPassword.status, 400);
   assert.equal(weakPassword.body.error, 'invalid_password');

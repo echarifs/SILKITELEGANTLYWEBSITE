@@ -122,7 +122,7 @@ test('account page prefills editable forms and saves details with PUT /profile',
   assert.equal(form.querySelector('[name="name"]').value, 'Test Weaver');
   assert.equal(form.querySelector('[name="email"]').value, 'test@example.invalid');
   assert.equal(form.querySelector('[data-phone-country="phone"]').value, 'MA');
-  assert.equal(form.querySelector('[name="phone"]').value, '0612345678');
+  assert.equal(form.querySelector('[name="phone"]').value, '06 12 34 56 78');
   assert.equal(form.querySelector('[name="currentPassword"]').required, false);
   assert.equal(form.querySelector('[name="marketingConsent"]').checked, false);
 
@@ -286,7 +286,7 @@ test('pen buttons reveal each edit form, cancel restores saved values, and the a
   const summary = document.querySelector('[data-account-summary="details"]');
   assert.equal(summary.hidden, false, 'details summary returns after closing the panel');
   assert.match(summary.textContent, /test@example\.invalid/u);
-  assert.match(summary.textContent, /Not added/u);
+  assert.equal(document.querySelector('[data-account-address-empty]').hidden, false, 'empty address note shows while no address is saved');
   assert.equal(document.querySelector('[data-account-summary="address"]').hidden, true);
 
   editButton('details').click();

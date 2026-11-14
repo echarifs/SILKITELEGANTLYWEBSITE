@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import express from 'express';
+import request from 'supertest';
 import {
   createSandboxPaymentToken,
   hasSandboxKeyPair,
@@ -8,7 +10,13 @@ import {
   verifyYouCanPaySignature,
   YOUCANPAY_SANDBOX_TOKENIZE_URL,
 } from '../server/youcan-pay.js';
-import { applyProviderEvent, buildTrustedOrder, createYouCanPayWebhookHandler } from '../server/payments.js';
+import {
+  applyProviderEvent,
+  buildTrustedOrder,
+  createPaymentsRouter,
+  createYouCanPayWebhookHandler,
+  migrateOrderShipping,
+} from '../server/payments.js';
 
 const privateKey = 'pri_sandbox_test_key_1234567890';
 const publicKey = 'pub_sandbox_test_key_1234567890';
@@ -303,4 +311,186 @@ test('webhook handler validates the raw-body signature before touching order sta
   assert.equal(statusCode, 403);
   assert.equal(invalidFake.order.status, 'pending_payment');
   assert.equal(invalidFake.events.size, 0);
+});
+
+function compact(sql) {
+  return sql.replace(/\s+/gu, ' ').trim();
+}
+
+// Pool for the public payment routes: supports both top-level pool.query and
+// the rate-limit transaction (getConnection). Rate limits always pass.
+function createRoutePool({ orderRows = [] } = {}) {
+  const orders = new Map();
+  const attempted = [];
+  const rateRows = new Map();
+  const connection = {
+    async beginTransaction() {},
+    async commit() {},
+    async rollback() {},
+    release() {},
+    async query(sql, params = []) {
+      const normalized = compact(sql);
+      if (normalized.startsWith('INSERT IGNORE INTO auth_rate_limits')) {
+        if (!rateRows.has(params[0])) {
+          rateRows.set(params[0], { window_started_at: new Date(), attempts: 0, blocked_until: null });
+        }
+        return [{ affectedRows: 1 }, []];
+      }
+      if (normalized.startsWith('SELECT * FROM auth_rate_limits WHERE bucket_key = ? LIMIT 1 FOR UPDATE')) {
+        return [[rateRows.get(params[0])].filter(Boolean), []];
+      }
+      if (normalized.startsWith('UPDATE auth_rate_limits SET')) {
+        const row = rateRows.get(params[0]);
+        if (row) row.attempts += 1;
+        return [{ affectedRows: 1 }, []];
+      }
+      throw new Error(`Unexpected fake SQL: ${normalized}`);
+    },
+  };
+  const pool = {
+    queries: attempted,
+    rateRows,
+    async query(sql, params = []) {
+      const normalized = compact(sql);
+      attempted.push({ sql: normalized, params });
+      if (normalized.startsWith('INSERT INTO store_orders')) {
+        const [id] = params;
+        orders.set(id, {
+          id,
+          customer_email: params[2],
+          status: 'pending_payment',
+          shipping_set_at: null,
+        });
+        return [{ affectedRows: 1 }, []];
+      }
+      if (normalized.startsWith('UPDATE store_orders SET status =')) {
+        const found = orders.get(params[1] ?? params[0]);
+        if (found) found.status = normalized.includes('refund') ? params[0] : 'payment_failed';
+        return [{ affectedRows: 1 }, []];
+      }
+      if (normalized.startsWith('UPDATE store_orders SET provider_transaction_id')) {
+        return [{ affectedRows: 1 }, []];
+      }
+      if (normalized.startsWith('SELECT customer_email, status, shipping_set_at FROM store_orders')) {
+        return [[orders.get(params[0])].filter(Boolean), []];
+      }
+      if (normalized.startsWith('UPDATE store_orders SET shipping_line1')) {
+        const found = orders.get(params[6]);
+        if (!found || found.shipping_set_at) return [{ affectedRows: 0 }, []];
+        found.shipping_set_at = new Date();
+        found.shipping = { line1: params[0], line2: params[1], city: params[2], postalCode: params[3], country: params[4], phone: params[5] };
+        return [{ affectedRows: 1 }, []];
+      }
+      throw new Error(`Unexpected fake SQL: ${normalized}`);
+    },
+    async getConnection() { return connection; },
+  };
+  return { pool, orders, attempted };
+}
+
+function paymentsApp(pool) {
+  const app = express();
+  app.use(createPaymentsRouter({
+    pool,
+    allowedOrigins: new Set(['https://shop.example.invalid']),
+    privateKey,
+    publicKey,
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ token: 'route_token_123', transaction_id: 'cfdf4b2e-93f2-4f0f-8b7a-5f2d1a0c9e8b' }),
+    }),
+  }));
+  return app;
+}
+
+const CHECKOUT_SHIPPING = { line1: '12 Silk Road', line2: 'Riad wing', city: 'Nouakchott', postalCode: '0000', country: 'MR' };
+
+test('checkout stores an optional delivery address at creation and returns a session', async () => {
+  const fake = createRoutePool();
+  const response = await request(paymentsApp(fake.pool)).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      customer: { name: 'Safia Weaver', email: 'safia@example.com', phone: '+212612345678' },
+      shipping: CHECKOUT_SHIPPING,
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(response.status, 201);
+  assert.equal(response.body.mode, 'sandbox');
+  assert.ok(response.body.orderId);
+  const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
+  assert.ok(insert, 'order insert ran');
+  assert.ok(insert.sql.includes('shipping_set_at'), 'shipping timestamp is written inline');
+  assert.deepEqual(insert.params.slice(7, 12), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR']);
+});
+
+test('checkout without a delivery address leaves the shipping columns null', async () => {
+  const fake = createRoutePool();
+  const response = await request(paymentsApp(fake.pool)).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      customer: { name: 'Guest Weaver', email: 'guest@example.com', phone: '' },
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(response.status, 201);
+  const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
+  assert.ok(insert);
+  assert.equal(insert.sql.includes('NULL, UTC_TIMESTAMP(3)'), true);
+  assert.deepEqual(insert.params.slice(7, 12), [null, null, null, null, null]);
+});
+
+test('delivery details accept the paid order once and validate the payer email', async () => {
+  const seed = createRoutePool();
+  await request(paymentsApp(seed.pool)).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      customer: { name: 'Guest Weaver', email: 'guest@example.com', phone: '' },
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  const seededOrder = [...seed.orders.values()][0];
+  const { pool, orders, attempted } = createRoutePool();
+  // Reuse the seeded order id as an already-paid order on a fresh mock pool.
+  orders.set(seededOrder.id, {
+    id: seededOrder.id,
+    customer_email: 'guest@example.com',
+    status: 'paid',
+    shipping_set_at: null,
+  });
+  const app = paymentsApp(pool);
+  const route = () => request(app).post('/shipping-details')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json');
+
+  const wrongEmail = await route()
+    .send({ orderId: seededOrder.id, email: 'other@example.com', ...CHECKOUT_SHIPPING });
+  assert.equal(wrongEmail.status, 404);
+  assert.equal(wrongEmail.body.error, 'order_not_found');
+
+  const badCountry = await route()
+    .send({ orderId: seededOrder.id, email: 'guest@example.com', ...CHECKOUT_SHIPPING, country: 'ZZ' });
+  assert.equal(badCountry.status, 400);
+  assert.equal(badCountry.body.error, 'invalid_shipping');
+
+  const order = orders.get(seededOrder.id);
+  order.status = 'refunded';
+  const refunded = await route()
+    .send({ orderId: seededOrder.id, email: 'guest@example.com', ...CHECKOUT_SHIPPING });
+  assert.equal(refunded.status, 409);
+  assert.equal(refunded.body.error, 'order_refunded');
+  order.status = 'paid';
+
+  const first = await route()
+    .send({ orderId: seededOrder.id, email: 'Guest@Example.Com', ...CHECKOUT_SHIPPING, phone: '+212612345678' });
+  assert.equal(first.status, 200);
+  assert.deepEqual(first.body, { saved: true });
+  const update = attempted.find(({ sql }) => sql.startsWith('UPDATE store_orders SET shipping_line1'));
+  assert.ok(update, 'shipping update ran');
+  assert.deepEqual(update.params.slice(0, 6), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR', '+212612345678']);
+
+  const second = await route()
+    .send({ orderId: seededOrder.id, email: 'guest@example.com', ...CHECKOUT_SHIPPING });
+  assert.equal(second.status, 409);
+  assert.equal(second.body.error, 'shipping_already_set');
 });

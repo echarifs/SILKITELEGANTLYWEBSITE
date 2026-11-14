@@ -1821,10 +1821,12 @@ svg {
 /* YouCan Pay sandbox checkout */
 .checkout-panel[hidden],
 .checkout-payment-stage[hidden],
+.checkout-shipping-stage[hidden],
 .checkout-btn[hidden],
 .checkout-whatsapp[hidden],
 .checkout-confirm-btn[hidden],
-.checkout-back[hidden] {
+.checkout-back[hidden],
+.checkout-save-account[hidden] {
   display: none !important;
 }
 
@@ -1852,12 +1854,14 @@ svg {
   text-transform: uppercase;
 }
 
-.checkout-details-form {
+.checkout-details-form,
+.checkout-shipping-form {
   display: grid;
   gap: 14px;
 }
 
-.checkout-details-form label {
+.checkout-details-form label,
+.checkout-shipping-form > label {
   display: grid;
   gap: 7px;
   color: var(--ink);
@@ -1866,7 +1870,9 @@ svg {
   text-transform: uppercase;
 }
 
-.checkout-details-form input {
+.checkout-details-form input,
+.checkout-shipping-form input,
+.checkout-shipping-form select {
   width: 100%;
   min-height: 46px;
   border: 1px solid var(--line-strong);
@@ -1879,10 +1885,38 @@ svg {
   text-transform: none;
 }
 
-.checkout-details-form input:focus {
+.checkout-shipping-form select {
+  cursor: pointer;
+}
+
+.checkout-details-form input:focus,
+.checkout-shipping-form input:focus,
+.checkout-shipping-form select:focus {
   border-color: var(--plum);
   outline: 2px solid rgba(124, 79, 95, 0.16);
   outline-offset: 1px;
+}
+
+.checkout-save-account {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.checkout-save-account input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  accent-color: var(--plum);
 }
 
 .phone-field-controls {
@@ -1930,7 +1964,8 @@ svg {
 }
 
 .checkout-create-session,
-.checkout-confirm-btn {
+.checkout-confirm-btn,
+.checkout-shipping-submit {
   width: 100%;
   min-height: 48px;
   border: 0;
@@ -1947,12 +1982,14 @@ svg {
 }
 
 .checkout-create-session:hover,
-.checkout-confirm-btn:hover:not(:disabled) {
+.checkout-confirm-btn:hover:not(:disabled),
+.checkout-shipping-submit:hover:not(:disabled) {
   background: var(--plum);
 }
 
 .checkout-create-session:disabled,
-.checkout-confirm-btn:disabled {
+.checkout-confirm-btn:disabled,
+.checkout-shipping-submit:disabled {
   cursor: wait;
   opacity: 0.58;
 }
@@ -2003,6 +2040,60 @@ svg {
   color: var(--ink);
 }
 
-.checkout-details-form[hidden] {
+.checkout-details-form[hidden],
+.checkout-shipping-form[hidden] {
   display: none !important;
+}
+
+/* The grid/flex displays above defeat the hidden attribute, so spell it out. */
+.checkout-details-form label[hidden],
+.checkout-phone-field[hidden] {
+  display: none !important;
+}
+
+.checkout-account-summary {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.checkout-identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.checkout-identity[hidden] {
+  display: none !important;
+}
+
+.checkout-identity-pen {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.checkout-identity-pen:hover {
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.checkout-identity-pen svg {
+  width: 15px;
+  height: 15px;
 }

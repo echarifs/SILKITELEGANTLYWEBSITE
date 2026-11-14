@@ -24,6 +24,7 @@ try {
   await pool.query('SELECT id FROM store_orders LIMIT 1');
   await pool.query('SELECT id FROM payment_mail_jobs LIMIT 1');
   await pool.query('SELECT address_line1 FROM customers LIMIT 1');
+  await pool.query('SELECT shipping_line1 FROM store_orders LIMIT 1');
   const [emailResult, sheetResult] = await Promise.all([mail.verifyConnection(), sheets.verifyConnection()]);
   console.log('Email service:', emailResult.ok ? 'connected' : emailResult.code);
   console.log('Customer sheet:', sheetResult.ok ? 'connected and restricted' : sheetResult.code);
