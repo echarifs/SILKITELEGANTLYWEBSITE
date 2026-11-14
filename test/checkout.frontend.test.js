@@ -272,6 +272,32 @@ test('a signed-in customer without a stored phone sees it in the summary and add
   dom.window.close();
 });
 
+test('country lists are filled even when the checkout was mounted before the cart markup', async () => {
+  const { dom, requests } = setup({ user: null });
+  // Live order of events: the checkout mounts at startup, then every route
+  // change re-renders the cart markup fresh, wiping the select options.
+  document.querySelector('#cart-modal').remove();
+  mount();
+  document.body.insertAdjacentHTML('beforeend', CART_MARKUP);
+
+  const detailsForm = document.querySelector('.checkout-details-form');
+  // The details phone list is filled when the checkout opens.
+  document.querySelector('.checkout-btn').click();
+  await waitUntil(() => detailsForm.querySelector('[data-phone-country="customerPhone"] option[value="MA"]'));
+  detailsForm.querySelector('input[name="customerName"]').value = 'Guest Weaver';
+  detailsForm.querySelector('input[name="customerEmail"]').value = 'guest@example.invalid';
+  submit(detailsForm, dom);
+  await waitUntil(() => !document.querySelector('.checkout-confirm-btn').disabled);
+
+  document.querySelector('.checkout-confirm-btn').click();
+  await waitUntil(() => !document.querySelector('.checkout-shipping-stage').hidden);
+  // The delivery country and phone lists are usable on the freshly rendered step.
+  const shippingForm = document.querySelector('.checkout-shipping-form');
+  assert.ok(shippingForm.querySelector('select[name="shippingCountry"] option[value="FR"]'), 'delivery country list is populated');
+  assert.ok(shippingForm.querySelector('[data-phone-country="shippingPhone"] option[value="MA"]'), 'delivery phone list is populated');
+  dom.window.close();
+});
+
 test('the delivery step refuses to save until every required field is complete', async () => {
   const { dom, requests } = setup({ user: null });
   await reachPaymentStage({ dom, requests }, null);

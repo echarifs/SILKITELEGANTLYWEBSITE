@@ -30,10 +30,6 @@ const PEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 
 export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount, renderCartItems }) {
   if (!cart) throw new TypeError('Cart is required');
-  hydratePhoneCountrySelectors(document);
-  // The delivery country select mirrors the account page's country list.
-  const shippingCountrySelect = document.querySelector('.checkout-shipping-form select[name="shippingCountry"]');
-  if (shippingCountrySelect) shippingCountrySelect.insertAdjacentHTML('beforeend', countryNameOptionsMarkup());
   let paymentElement = null;
   let checkoutSession = null;
   let generation = 0;
@@ -49,6 +45,17 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     const status = getStatus();
     if (status) status.textContent = message;
   };
+
+  // Every route change re-renders the cart markup, so the country lists are
+  // filled when the checkout opens. Both helpers are idempotent.
+  function ensureCheckoutSelects() {
+    hydratePhoneCountrySelectors(document);
+    // The delivery country select mirrors the account page's country list.
+    const shippingCountrySelect = query('.checkout-shipping-form select[name="shippingCountry"]');
+    if (shippingCountrySelect && shippingCountrySelect.options.length <= 1) {
+      shippingCountrySelect.insertAdjacentHTML('beforeend', countryNameOptionsMarkup());
+    }
+  }
 
   // Signed-in customers skip typing their details entirely: the order is built
   // from their profile behind the scenes and a summary line replaces the fields.
@@ -222,6 +229,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     if (checkoutButton) checkoutButton.hidden = true;
     if (whatsappButton) whatsappButton.hidden = true;
     if (!profileRequested) loadProfile();
+    ensureCheckoutSelects();
     prefillCheckoutForm();
     const nameField = query('input[name="customerName"]');
     // A guest types their details; a signed-in customer jumps straight to the button.
