@@ -4,10 +4,13 @@ import crypto from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
 import {
-  createSandboxPaymentToken,
+  createPaymentToken,
+  hasLiveKeyPair,
   hasSandboxKeyPair,
   parseYouCanPayMinorAmount,
+  resolveKeyMode,
   verifyYouCanPaySignature,
+  YOUCANPAY_LIVE_TOKENIZE_URL,
   YOUCANPAY_SANDBOX_TOKENIZE_URL,
 } from '../server/youcan-pay.js';
 import {
@@ -20,22 +23,33 @@ import {
 
 const privateKey = 'pri_sandbox_test_key_1234567890';
 const publicKey = 'pub_sandbox_test_key_1234567890';
+const livePrivateKey = 'pri_live_secret_123456789';
+const livePublicKey = 'pub_live_public_123456789';
 const orderId = '123e4567-e89b-12d3-a456-426614174000';
 
-test('only sandbox-prefixed YouCan Pay key pairs are accepted', () => {
+test('YouCan Pay key pairs are classified as sandbox or live, never both', () => {
   assert.equal(hasSandboxKeyPair(privateKey, publicKey), true);
-  assert.equal(hasSandboxKeyPair('pri_live_secret_1234567890', publicKey), false);
-  assert.equal(hasSandboxKeyPair(privateKey, 'pub_live_1234567890'), false);
+  assert.equal(hasSandboxKeyPair(livePrivateKey, publicKey), false);
+  assert.equal(hasSandboxKeyPair(privateKey, livePublicKey), false);
+  assert.equal(hasLiveKeyPair(privateKey, publicKey), false);
+  assert.equal(hasLiveKeyPair(livePrivateKey, livePublicKey), true);
+  assert.equal(hasLiveKeyPair(livePrivateKey, publicKey), false);
+  assert.equal(hasLiveKeyPair(privateKey, livePublicKey), false);
+  assert.equal(resolveKeyMode(livePrivateKey, livePublicKey), 'live');
+  assert.equal(resolveKeyMode(privateKey, publicKey), 'sandbox');
+  assert.equal(resolveKeyMode(livePrivateKey, publicKey), null);
+  assert.equal(resolveKeyMode(undefined, undefined), null);
 });
 
 test('server tokenization sends the trusted amount and sandbox private key only to the provider', async () => {
   let captured;
-  const result = await createSandboxPaymentToken({
+  const result = await createPaymentToken({
     orderId,
-    amountMinor: 8500,
-    currency: 'EUR',
+    amountMinor: 93500,
+    currency: 'MAD',
     privateKey,
     publicKey,
+    mode: 'sandbox',
     fetchImpl: async (url, options) => {
       captured = { url, options };
       return {
@@ -48,8 +62,8 @@ test('server tokenization sends the trusted amount and sandbox private key only 
   assert.equal(captured.url, YOUCANPAY_SANDBOX_TOKENIZE_URL);
   assert.equal(captured.options.method, 'POST');
   const form = new URLSearchParams(captured.options.body);
-  assert.equal(form.get('amount'), '8500');
-  assert.equal(form.get('currency'), 'EUR');
+  assert.equal(form.get('amount'), '93500');
+  assert.equal(form.get('currency'), 'MAD');
   assert.equal(form.get('order_id'), orderId);
   assert.equal(form.get('pri_key'), privateKey);
   assert.deepEqual(result, { token: 'token_from_provider_123', transactionId: 'f8d2c1a0-3b4c-4d5e-8f90-a1b2c3d4e5f6' });
@@ -57,25 +71,70 @@ test('server tokenization sends the trusted amount and sandbox private key only 
 });
 
 test('sandbox tokenization accepts the provider response when it contains a token but no transaction ID', async () => {
-  const result = await createSandboxPaymentToken({
+  const result = await createPaymentToken({
     orderId,
-    amountMinor: 8500,
-    currency: 'EUR',
+    amountMinor: 93500,
+    currency: 'MAD',
     privateKey,
     publicKey,
+    mode: 'sandbox',
     fetchImpl: async () => ({ ok: true, json: async () => ({ token: 'sandbox_token_only_123' }) }),
   });
   assert.deepEqual(result, { token: 'sandbox_token_only_123', transactionId: null });
 });
 
-test('tokenization refuses live credentials before making a network request', async () => {
-  let called = false;
-  await assert.rejects(createSandboxPaymentToken({
+test('live tokenization routes to the live endpoint only with the matching key pair', async () => {
+  let captured;
+  const result = await createPaymentToken({
     orderId,
-    amountMinor: 8500,
-    currency: 'EUR',
+    amountMinor: 93500,
+    currency: 'MAD',
+    privateKey: livePrivateKey,
+    publicKey: livePublicKey,
+    mode: 'live',
+    fetchImpl: async (url, options) => {
+      captured = { url, options };
+      return {
+        ok: true,
+        json: async () => ({ token: 'live_token_from_provider', transaction_id: 'f8d2c1a0-3b4c-4d5e-8f90-a1b2c3d4e5f6' }),
+      };
+    },
+  });
+  assert.equal(captured.url, YOUCANPAY_LIVE_TOKENIZE_URL);
+  assert.equal(captured.options.method, 'POST');
+  const form = new URLSearchParams(captured.options.body);
+  assert.equal(form.get('pri_key'), livePrivateKey);
+  assert.equal(form.get('currency'), 'MAD');
+  assert.equal(result.token, 'live_token_from_provider');
+});
+
+test('tokenization refuses a mode that does not match the key pair before making a network request', async () => {
+  let called = false;
+  await assert.rejects(createPaymentToken({
+    orderId,
+    amountMinor: 93500,
+    currency: 'MAD',
+    privateKey: livePrivateKey,
+    publicKey: livePublicKey,
+    mode: 'sandbox',
+    fetchImpl: async () => { called = true; },
+  }), /PAYMENT_NOT_CONFIGURED/u);
+  await assert.rejects(createPaymentToken({
+    orderId,
+    amountMinor: 93500,
+    currency: 'MAD',
+    privateKey,
+    publicKey,
+    mode: 'live',
+    fetchImpl: async () => { called = true; },
+  }), /PAYMENT_NOT_CONFIGURED/u);
+  await assert.rejects(createPaymentToken({
+    orderId,
+    amountMinor: 93500,
+    currency: 'MAD',
     privateKey: 'pri_live_secret_123456789',
-    publicKey: 'pub_live_public_123456789',
+    publicKey: 'pub_sandbox_mismatched_key',
+    mode: 'live',
     fetchImpl: async () => { called = true; },
   }), /PAYMENT_NOT_CONFIGURED/u);
   assert.equal(called, false);
@@ -103,11 +162,11 @@ test('order totals come from the server catalogue and ignore browser-supplied pr
     { productId: 'mauve-mist', option: 'Small', quantity: 1, price: 0, productName: 'Fake' },
     { productId: 'ivory-whisper', option: 'Medium', quantity: 2, price: 0 },
   ]);
-  assert.equal(order.currency, 'EUR');
-  assert.equal(order.amountMinor, 28500);
+  assert.equal(order.currency, 'MAD');
+  assert.equal(order.amountMinor, 313500);
   assert.deepEqual(order.lines.map(({ productName, option, quantity, unitAmountMinor }) => ({ productName, option, quantity, unitAmountMinor })), [
-    { productName: 'Mauve Mist', option: 'Small', quantity: 1, unitAmountMinor: 8500 },
-    { productName: 'Ivory Whisper', option: 'Medium', quantity: 2, unitAmountMinor: 10000 },
+    { productName: 'Mauve Mist', option: 'Small', quantity: 1, unitAmountMinor: 93500 },
+    { productName: 'Ivory Whisper', option: 'Medium', quantity: 2, unitAmountMinor: 110000 },
   ]);
 });
 
@@ -127,8 +186,8 @@ function createFakePaymentPool() {
     status: 'pending_payment',
     provider_mode: 'sandbox',
     provider_transaction_id: providerTransactionId,
-    currency: 'EUR',
-    amount_minor: 8500,
+    currency: 'MAD',
+    amount_minor: 93500,
     refund_amount_minor: null,
   };
   const events = new Map();
@@ -199,16 +258,16 @@ function createFakePaymentPool() {
   };
 }
 
-function providerEvent(eventName, id = paymentEventId, transaction = {}) {
+function providerEvent(eventName, id = paymentEventId, transaction = {}, { sandbox = true } = {}) {
   return {
     id,
     event_name: eventName,
-    sandbox: true,
+    sandbox,
     payload: {
       transaction: {
         id: providerTransactionId,
-        amount: '8500',
-        currency: 'EUR',
+        amount: '93500',
+        currency: 'MAD',
         order_id: orderId,
         ...transaction,
       },
@@ -253,22 +312,43 @@ test('webhook reconciliation rejects mismatched amount, order, and provider tran
   }
 });
 
+test('live webhook events match live orders and ignore events from the wrong environment', async () => {
+  const fake = createFakePaymentPool();
+  fake.order.provider_mode = 'live';
+  const liveEvent = providerEvent('transaction.paid', crypto.randomUUID(), {}, { sandbox: false });
+  assert.equal(await applyProviderEvent(fake.pool, liveEvent), 'processed');
+  assert.equal(fake.order.status, 'paid');
+  assert.deepEqual(fake.emailJobs.map(({ type }) => type), ['payment_confirmation']);
+
+  // A sandbox event must never touch a live order, and vice versa.
+  const sandboxFake = createFakePaymentPool();
+  sandboxFake.order.provider_mode = 'live';
+  assert.equal(await applyProviderEvent(sandboxFake.pool, providerEvent('transaction.paid', crypto.randomUUID())), 'rejected');
+  assert.equal(sandboxFake.order.status, 'pending_payment');
+  assert.equal(sandboxFake.emailJobs.length, 0);
+
+  const liveFake = createFakePaymentPool();
+  assert.equal(await applyProviderEvent(liveFake.pool, providerEvent('transaction.paid', crypto.randomUUID(), {}, { sandbox: false })), 'rejected');
+  assert.equal(liveFake.order.status, 'pending_payment');
+  assert.equal(liveFake.emailJobs.length, 0);
+});
+
 test('refund events record cumulative partial and full amounts and queue notices once', async () => {
   const fake = createFakePaymentPool();
   assert.equal(await applyProviderEvent(fake.pool, providerEvent('transaction.paid')), 'processed');
   assert.equal(await applyProviderEvent(fake.pool, providerEvent('transaction.refunded', 'c3d4e5f6-789a-4bcd-8ef0-123456789abc', {
-    amount_refunded: { amount: '12.00', currency: 'EUR' },
+    amount_refunded: { amount: '12.00', currency: 'MAD' },
     is_fully_refunded: false,
   })), 'processed');
   assert.equal(fake.order.status, 'partially_refunded');
   assert.equal(Number(fake.order.refund_amount_minor), 1200);
 
   assert.equal(await applyProviderEvent(fake.pool, providerEvent('transaction.refunded', 'd4e5f678-9abc-4def-8012-3456789abcde', {
-    amount_refunded: { amount: '85.00', currency: 'EUR' },
+    amount_refunded: { amount: '935.00', currency: 'MAD' },
     is_fully_refunded: true,
   })), 'processed');
   assert.equal(fake.order.status, 'refunded');
-  assert.equal(Number(fake.order.refund_amount_minor), 8500);
+  assert.equal(Number(fake.order.refund_amount_minor), 93500);
   assert.deepEqual(fake.emailJobs.map(({ type }) => type), [
     'payment_confirmation',
     'refund_notification',
@@ -311,6 +391,39 @@ test('webhook handler validates the raw-body signature before touching order sta
   assert.equal(statusCode, 403);
   assert.equal(invalidFake.order.status, 'pending_payment');
   assert.equal(invalidFake.events.size, 0);
+});
+
+test('webhook handler accepts live keys and verifies live events against the live secret', async () => {
+  const fake = createFakePaymentPool();
+  fake.order.provider_mode = 'live';
+  const handler = createYouCanPayWebhookHandler({ pool: fake.pool, livePrivateKey, livePublicKey });
+  const paidEvent = { ...providerEvent('transaction.paid', crypto.randomUUID(), {}, { sandbox: false }) };
+  const rawBody = Buffer.from(JSON.stringify(paidEvent));
+  const signature = crypto.createHmac('sha256', livePrivateKey).update(rawBody).digest('hex');
+  let statusCode = 0;
+  let responseBody;
+  const response = {
+    status(code) { statusCode = code; return this; },
+    json(body) { responseBody = body; return this; },
+    end() { return this; },
+  };
+
+  await handler({ body: rawBody, headers: { 'x-youcanpay-signature': signature } }, response);
+  assert.equal(statusCode, 200);
+  assert.deepEqual(responseBody, { received: true });
+  assert.equal(fake.order.status, 'paid');
+
+  const sandboxSigned = { ...providerEvent('transaction.paid', crypto.randomUUID()) };
+  const sandboxBody = Buffer.from(JSON.stringify(sandboxSigned));
+  const sandboxSignature = crypto.createHmac('sha256', privateKey).update(sandboxBody).digest('hex');
+  const wrongEnvFake = createFakePaymentPool();
+  statusCode = 0;
+  await createYouCanPayWebhookHandler({ pool: wrongEnvFake.pool, livePrivateKey, livePublicKey })(
+    { body: sandboxBody, headers: { 'x-youcanpay-signature': sandboxSignature } },
+    response,
+  );
+  assert.equal(statusCode, 403, 'an event signed with the sandbox secret must not verify against live keys');
+  assert.equal(wrongEnvFake.order.status, 'pending_payment');
 });
 
 function compact(sql) {
@@ -388,16 +501,18 @@ function createRoutePool({ orderRows = [] } = {}) {
   return { pool, orders, attempted };
 }
 
-function paymentsApp(pool) {
+function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, livePrivateKey: routeLivePrivate, livePublicKey: routeLivePublic } = {}) {
   const app = express();
   app.use(createPaymentsRouter({
     pool,
     allowedOrigins: new Set(['https://shop.example.invalid']),
-    privateKey,
-    publicKey,
-    fetchImpl: async () => ({
+    privateKey: routePrivate ?? privateKey,
+    publicKey: routePublic ?? publicKey,
+    livePrivateKey: routeLivePrivate,
+    livePublicKey: routeLivePublic,
+    fetchImpl: async (url) => ({
       ok: true,
-      json: async () => ({ token: 'route_token_123', transaction_id: 'cfdf4b2e-93f2-4f0f-8b7a-5f2d1a0c9e8b' }),
+      json: async () => ({ token: url === YOUCANPAY_LIVE_TOKENIZE_URL ? 'route_live_token_123' : 'route_token_123', transaction_id: 'cfdf4b2e-93f2-4f0f-8b7a-5f2d1a0c9e8b' }),
     }),
   }));
   return app;
@@ -421,7 +536,38 @@ test('checkout stores an optional delivery address at creation and returns a ses
   const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
   assert.ok(insert, 'order insert ran');
   assert.ok(insert.sql.includes('shipping_set_at'), 'shipping timestamp is written inline');
-  assert.deepEqual(insert.params.slice(7, 12), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR']);
+  assert.equal(insert.params[7], 'sandbox', 'provider mode is stored with the order');
+  assert.deepEqual(insert.params.slice(8, 13), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR']);
+});
+
+test('checkout with live keys charges live and stores provider_mode = live', async () => {
+  const fake = createRoutePool();
+  const response = await request(paymentsApp(fake.pool, { livePrivateKey, livePublicKey })).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      customer: { name: 'Live Weaver', email: 'live@example.com', phone: '' },
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(response.status, 201);
+  assert.equal(response.body.mode, 'live');
+  assert.equal(response.body.token, 'route_live_token_123');
+  assert.equal(response.body.publicKey, livePublicKey);
+  const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
+  assert.equal(insert.params[7], 'live');
+});
+
+test('checkout without any usable key pair reports payments as unconfigured', async () => {
+  const fake = createRoutePool();
+  const response = await request(paymentsApp(fake.pool, { privateKey: 'pri_live_mismatched', publicKey })).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      customer: { name: 'No Keys', email: 'nokeys@example.com', phone: '' },
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(response.status, 503);
+  assert.equal(response.body.error, 'payments_not_configured');
 });
 
 test('checkout without a delivery address leaves the shipping columns null', async () => {
@@ -437,7 +583,7 @@ test('checkout without a delivery address leaves the shipping columns null', asy
   const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
   assert.ok(insert);
   assert.equal(insert.sql.includes('NULL, UTC_TIMESTAMP(3)'), true);
-  assert.deepEqual(insert.params.slice(7, 12), [null, null, null, null, null]);
+  assert.deepEqual(insert.params.slice(8, 13), [null, null, null, null, null]);
 });
 
 test('delivery details accept the paid order once and validate the payer email', async () => {

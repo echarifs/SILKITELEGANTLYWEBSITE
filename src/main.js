@@ -25,7 +25,7 @@ const products = [
     id: 'mauve-mist',
     name: 'Mauve Mist',
     detail: 'Everyday / Rose silk',
-    price: 'From €85',
+    price: 'From MAD 935',
     className: 'product-mauve',
     images: ['/source-assets/collection/1.jpg'],
     description: 'A soft, breathable rose-toned silk designed for effortless elegance throughout the day.',
@@ -35,7 +35,7 @@ const products = [
     id: 'ivory-whisper',
     name: 'Ivory Whisper',
     detail: 'Occasion / Pearl silk',
-    price: 'From €95',
+    price: 'From MAD 1,045',
     className: 'product-ivory',
     images: ['/source-assets/collection/IMG_2726.jpg', '/source-assets/collection/IMG_2728.jpg'],
     description: 'A luminous pearl silk with a subtle glow, crafted for unforgettable entrances and special memories.',
@@ -45,7 +45,7 @@ const products = [
     id: 'midnight-fig',
     name: 'Midnight Fig',
     detail: 'Signature / Plum silk',
-    price: 'From €110',
+    price: 'From MAD 1,210',
     className: 'product-fig',
     images: ['/source-assets/collection/IMG_2730.jpg'],
     description: 'A deep, rich plum silk that makes a bold yet quiet statement. The pinnacle of our signature collection.',
@@ -55,7 +55,7 @@ const products = [
     id: 'rose-dawn',
     name: 'Rose Dawn',
     detail: 'Everyday / Soft Rose',
-    price: 'From €85',
+    price: 'From MAD 935',
     className: 'product-mauve',
     images: ['/source-assets/collection/IMG_2721.jpg', '/source-assets/collection/IMG_2722.jpg'],
     description: 'A gentle start to the day with soft rose hues.',
@@ -65,7 +65,7 @@ const products = [
     id: 'pearl-essence',
     name: 'Pearl Essence',
     detail: 'Occasion / Luminous Pearl',
-    price: 'From €95',
+    price: 'From MAD 1,045',
     className: 'product-ivory',
     images: ['/source-assets/collection/4.jpg'],
     description: 'Luminous and pure, perfect for special moments.',
@@ -75,7 +75,7 @@ const products = [
     id: 'deep-plum',
     name: 'Deep Plum',
     detail: 'Signature / Velvet Plum',
-    price: 'From €110',
+    price: 'From MAD 1,210',
     className: 'product-fig',
     images: ['/source-assets/collection/3.jpg'],
     description: 'A bold statement of confidence and grace.',
@@ -85,7 +85,7 @@ const products = [
     id: 'blush-silk',
     name: 'Blush Silk',
     detail: 'Everyday / Blush',
-    price: 'From €85',
+    price: 'From MAD 935',
     className: 'product-mauve',
     images: ['/source-assets/collection/IMG_2724.jpg', '/source-assets/collection/IMG_2725.jpg'],
     description: 'Softly colored silk for a subtle, feminine touch.',
@@ -95,7 +95,7 @@ const products = [
     id: 'moonlit-ivory',
     name: 'Moonlit Ivory',
     detail: 'Occasion / Ivory Glow',
-    price: 'From €95',
+    price: 'From MAD 1,045',
     className: 'product-ivory',
     images: ['/source-assets/collection/IMG_2723.jpg'],
     description: 'Glowing ivory silk that captures the moonlight.',
@@ -105,7 +105,7 @@ const products = [
     id: 'royal-fig',
     name: 'Royal Fig',
     detail: 'Signature / Royal Plum',
-    price: 'From €110',
+    price: 'From MAD 1,210',
     className: 'product-fig',
     images: ['/source-assets/collection/5.jpg'],
     description: 'The depth of plum combined with royal elegance.',
@@ -304,11 +304,11 @@ const renderCollection = () => {
 };
 
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(amount);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'MAD', maximumFractionDigits: 0 }).format(amount);
 }
 
 function formatDisplayPrice(amount) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' }).format(amount);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'MAD' }).format(amount);
 }
 
 function updateCartCount() {

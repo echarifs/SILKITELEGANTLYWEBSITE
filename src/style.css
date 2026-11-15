@@ -1857,12 +1857,6 @@ svg {
   line-height: 1.55;
 }
 
-.checkout-sandbox-note strong {
-  color: var(--plum);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .checkout-details-form,
 .checkout-shipping-form {
   display: grid;

@@ -64,8 +64,8 @@ function setup({ user }) {
       return { ok: true, status: 201, json: async () => ({
         orderId: 'test-order-id-1',
         orderReference: 'TESTORDER1',
-        amountMinor: 8500,
-        currency: 'EUR',
+        amountMinor: 93500,
+        currency: 'MAD',
         token: 'token_test_123',
         publicKey: 'pub_test_123',
         mode: 'sandbox',

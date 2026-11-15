@@ -258,7 +258,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       return;
     }
     if (submit) submit.disabled = true;
-    setStatus('Preparing a secure sandbox payment…');
+    setStatus('Preparing a secure card payment…');
     try {
       const formData = new FormData(form);
       const shipping = shippingFromProfile();
@@ -284,16 +284,17 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (body.error === 'sandbox_payments_not_configured') {
-          throw new Error('Sandbox payment credentials have not been configured yet. Please contact us to place your order.');
+        if (body.error === 'payments_not_configured') {
+          throw new Error('Card payments are not configured yet. Please contact us to place your order.');
         }
         if (body.error === 'try_again_later') throw new Error('Too many checkout attempts. Please wait a few minutes and try again.');
         if (body.error === 'invalid_cart' || body.error === 'invalid_checkout') throw new Error('Please check your cart and contact details, then try again.');
         throw new Error('We could not start the payment. Please try again or contact us for help.');
       }
       if (generationAtStart !== generation) return;
-      if (body.mode !== 'sandbox' || typeof body.token !== 'string' || typeof body.publicKey !== 'string') {
-        throw new Error('The sandbox payment response was incomplete. Please try again.');
+      if ((body.mode !== 'sandbox' && body.mode !== 'live')
+        || typeof body.token !== 'string' || typeof body.publicKey !== 'string') {
+        throw new Error('The payment response was incomplete. Please try again.');
       }
       shippingCaptured = Boolean(shipping);
       checkoutSession = {

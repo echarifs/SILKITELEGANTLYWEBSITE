@@ -1,8 +1,11 @@
 import crypto from 'node:crypto';
 
 export const YOUCANPAY_SANDBOX_TOKENIZE_URL = 'https://youcanpay.com/sandbox/api/tokenize';
+export const YOUCANPAY_LIVE_TOKENIZE_URL = 'https://youcanpay.com/api/tokenize';
 const SANDBOX_PRIVATE_KEY = /^pri_sandbox_[A-Za-z0-9_-]{8,256}$/u;
 const SANDBOX_PUBLIC_KEY = /^pub_sandbox_[A-Za-z0-9_-]{8,256}$/u;
+const LIVE_PRIVATE_KEY = /^pri_(?!sandbox_)[A-Za-z0-9_-]{8,256}$/u;
+const LIVE_PUBLIC_KEY = /^pub_(?!sandbox_)[A-Za-z0-9_-]{8,256}$/u;
 const TRANSACTION_ID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu;
 
 export function hasSandboxKeyPair(privateKey, publicKey) {
@@ -12,15 +15,37 @@ export function hasSandboxKeyPair(privateKey, publicKey) {
     && SANDBOX_PUBLIC_KEY.test(publicKey);
 }
 
-export async function createSandboxPaymentToken({
+export function hasLiveKeyPair(privateKey, publicKey) {
+  return typeof privateKey === 'string'
+    && typeof publicKey === 'string'
+    && LIVE_PRIVATE_KEY.test(privateKey)
+    && LIVE_PUBLIC_KEY.test(publicKey);
+}
+
+export function resolveKeyMode(privateKey, publicKey) {
+  if (hasLiveKeyPair(privateKey, publicKey)) return 'live';
+  if (hasSandboxKeyPair(privateKey, publicKey)) return 'sandbox';
+  return null;
+}
+
+export async function createPaymentToken({
   orderId,
   amountMinor,
   currency,
   privateKey,
   publicKey,
+  mode,
   fetchImpl = globalThis.fetch,
 } = {}) {
-  if (!hasSandboxKeyPair(privateKey, publicKey)) throw new Error('PAYMENT_NOT_CONFIGURED');
+  if (!hasLiveKeyPair(privateKey, publicKey) && !hasSandboxKeyPair(privateKey, publicKey)) {
+    throw new Error('PAYMENT_NOT_CONFIGURED');
+  }
+  if ((mode !== 'live' && mode !== 'sandbox')
+    || (mode === 'live' && !hasLiveKeyPair(privateKey, publicKey))
+    || (mode === 'sandbox' && !hasSandboxKeyPair(privateKey, publicKey))) {
+    throw new Error('PAYMENT_NOT_CONFIGURED');
+  }
+  const tokenizeUrl = mode === 'live' ? YOUCANPAY_LIVE_TOKENIZE_URL : YOUCANPAY_SANDBOX_TOKENIZE_URL;
   if (typeof orderId !== 'string' || !/^[a-f0-9-]{36}$/iu.test(orderId)) throw new Error('INVALID_ORDER');
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 1) throw new Error('INVALID_AMOUNT');
   if (!['EUR', 'MAD'].includes(currency)) throw new Error('INVALID_CURRENCY');
@@ -34,7 +59,7 @@ export async function createSandboxPaymentToken({
   });
   let response;
   try {
-    response = await fetchImpl(YOUCANPAY_SANDBOX_TOKENIZE_URL, {
+    response = await fetchImpl(tokenizeUrl, {
       method: 'POST',
       headers: {
         Accept: 'application/json',

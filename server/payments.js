@@ -17,7 +17,8 @@ import {
 } from './security.js';
 import { productCatalog } from '../src/product-catalog.js';
 import {
-  createSandboxPaymentToken,
+  createPaymentToken,
+  hasLiveKeyPair,
   hasSandboxKeyPair,
   parseYouCanPayMinorAmount,
   verifyYouCanPaySignature,
@@ -25,7 +26,7 @@ import {
 import { enqueuePaymentEmail } from './payment-mail-queue.js';
 
 export const PAYMENTS_MIGRATION_ID = '003-youcanpay-orders';
-const CURRENCY = 'EUR';
+const CURRENCY = 'MAD';
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const UUID_RE = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu;
 
@@ -56,7 +57,7 @@ export async function migratePayments(pool) {
       shipping_country CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL,
       shipping_set_at DATETIME(3) NULL,
       CONSTRAINT store_orders_status_chk CHECK (status IN ('pending_payment', 'paid', 'payment_failed', 'partially_refunded', 'refunded')),
-      CONSTRAINT store_orders_sandbox_chk CHECK (provider_mode = 'sandbox'),
+      CONSTRAINT store_orders_mode_chk CHECK (provider_mode IN ('sandbox', 'live')),
       CONSTRAINT store_orders_amount_chk CHECK (amount_minor > 0),
       UNIQUE KEY store_orders_provider_txn_unique (provider_transaction_id),
       KEY store_orders_email_created_idx (customer_email, created_at),
@@ -102,6 +103,27 @@ export async function migrateOrderShipping(pool) {
   }
   await pool.query('INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, UTC_TIMESTAMP(3))', [ORDER_SHIPPING_MIGRATION_ID]);
   return ORDER_SHIPPING_MIGRATION_ID;
+}
+
+export const ORDER_MODE_MIGRATION_ID = '007-order-mode';
+
+// The original schema only allowed sandbox payments; this opens store_orders to
+// live mode. Idempotent: guarded on the migration row and the old constraint name.
+export async function migrateOrderMode(pool) {
+  if (!pool || typeof pool.query !== 'function') throw new TypeError('A MySQL pool is required');
+  const [applied] = await pool.query('SELECT id FROM schema_migrations WHERE id = ? LIMIT 1', [ORDER_MODE_MIGRATION_ID]);
+  if (applied.length === 0) {
+    const [existing] = await pool.query(
+      `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_orders' AND CONSTRAINT_NAME = 'store_orders_sandbox_chk'`,
+    );
+    if (existing.length > 0) {
+      await pool.query('ALTER TABLE store_orders DROP CHECK store_orders_sandbox_chk');
+      await pool.query("ALTER TABLE store_orders ADD CONSTRAINT store_orders_mode_chk CHECK (provider_mode IN ('sandbox', 'live'))");
+    }
+  }
+  await pool.query('INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, UTC_TIMESTAMP(3))', [ORDER_MODE_MIGRATION_ID]);
+  return ORDER_MODE_MIGRATION_ID;
 }
 
 export function buildTrustedOrder(items) {
@@ -214,16 +236,28 @@ function shippingRateKey(kind, value) {
   return `rate:shipping:${kind}:${hashToken(value).toString('hex')}`;
 }
 
+/** Resolve the YouCan Pay mode: live wins when the live key pair is present, else sandbox, else null. */
+export function resolvePaymentsMode(livePrivateKey, livePublicKey, sandboxPrivateKey, sandboxPublicKey) {
+  if (hasLiveKeyPair(livePrivateKey, livePublicKey)) return 'live';
+  if (hasSandboxKeyPair(sandboxPrivateKey, sandboxPublicKey)) return 'sandbox';
+  return null;
+}
+
 export function createPaymentsRouter({
   pool,
   allowedOrigins = new Set(),
   privateKey = process.env.YOUCANPAY_SANDBOX_PRIVATE_KEY,
   publicKey = process.env.YOUCANPAY_SANDBOX_PUBLIC_KEY,
+  livePrivateKey = process.env.YOUCANPAY_PRIVATE_KEY,
+  livePublicKey = process.env.YOUCANPAY_PUBLIC_KEY,
   fetchImpl = globalThis.fetch,
 } = {}) {
   if (!pool || typeof pool.query !== 'function' || typeof pool.getConnection !== 'function') throw new TypeError('pool is required');
   const router = express.Router();
   const origins = normalizedOrigins(allowedOrigins);
+  const mode = resolvePaymentsMode(livePrivateKey, livePublicKey, privateKey, publicKey);
+  const activePrivateKey = mode === 'live' ? livePrivateKey : privateKey;
+  const activePublicKey = mode === 'live' ? livePublicKey : publicKey;
   router.use((_req, res, next) => { setSecurityHeaders(res); next(); });
   router.use(express.json({ limit: MAX_JSON_BYTES, type: 'application/json' }));
 
@@ -231,7 +265,7 @@ export function createPaymentsRouter({
     try {
       if (!isAllowedOrigin(requestOrigin(req), origins)) return res.status(403).json({ error: 'request_not_authorized' });
       if (!isJsonRequest(req)) return res.status(415).json({ error: 'json_required' });
-      if (!hasSandboxKeyPair(privateKey, publicKey)) return res.status(503).json({ error: 'sandbox_payments_not_configured' });
+      if (!mode) return res.status(503).json({ error: 'payments_not_configured' });
       if (!validBodyObject(req.body) || !validBodyObject(req.body.customer)) return res.status(400).json({ error: 'invalid_checkout' });
       const name = validateName(req.body.customer.name);
       const email = normalizeEmail(req.body.customer.email);
@@ -252,19 +286,20 @@ export function createPaymentsRouter({
           (id, status, customer_name, customer_email, customer_phone, items_json, currency, amount_minor, provider, provider_mode,
            shipping_line1, shipping_line2, shipping_city, shipping_postal_code, shipping_country, shipping_set_at,
            created_at, updated_at)
-        VALUES (?, 'pending_payment', ?, ?, ?, ?, ?, ?, 'youcanpay', 'sandbox', ?, ?, ?, ?, ?, ${shippingAt}, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`, [
-        orderId, name, email, phone, JSON.stringify(order.lines), order.currency, order.amountMinor,
+        VALUES (?, 'pending_payment', ?, ?, ?, ?, ?, ?, 'youcanpay', ?, ?, ?, ?, ?, ?, ${shippingAt}, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`, [
+        orderId, name, email, phone, JSON.stringify(order.lines), order.currency, order.amountMinor, mode,
         shipping?.line1 ?? null, shipping?.line2 ?? null, shipping?.city ?? null, shipping?.postalCode ?? null, shipping?.country ?? null,
       ]);
 
       let providerToken;
       try {
-        providerToken = await createSandboxPaymentToken({
+        providerToken = await createPaymentToken({
           orderId,
           amountMinor: order.amountMinor,
           currency: order.currency,
-          privateKey,
-          publicKey,
+          privateKey: activePrivateKey,
+          publicKey: activePublicKey,
+          mode,
           fetchImpl,
         });
       } catch {
@@ -282,8 +317,8 @@ export function createPaymentsRouter({
         amountMinor: order.amountMinor,
         currency: order.currency,
         token: providerToken.token,
-        publicKey,
-        mode: 'sandbox',
+        publicKey: activePublicKey,
+        mode,
       });
     } catch (error) { next(error); }
   });
@@ -343,13 +378,15 @@ function validProviderEvent(event) {
   return event && typeof event === 'object' && !Array.isArray(event)
     && typeof event.id === 'string' && UUID_RE.test(event.id)
     && ['transaction.paid', 'transaction.failed', 'transaction.refunded'].includes(event.event_name)
-    && event.sandbox === true
+    && typeof event.sandbox === 'boolean'
     && event.payload && typeof event.payload === 'object'
     && event.payload.transaction && typeof event.payload.transaction === 'object';
 }
 
 export async function applyProviderEvent(pool, event) {
   const tx = event.payload.transaction;
+  // The event carries its own environment; the order row must live in the same one.
+  const eventMode = event.sandbox === true ? 'sandbox' : 'live';
   const currency = typeof tx.currency === 'string' ? tx.currency : tx.amount?.currency;
   const amountMinor = parseYouCanPayMinorAmount(tx.amount, currency);
   const orderId = typeof tx.order_id === 'string' ? tx.order_id : '';
@@ -365,7 +402,7 @@ export async function applyProviderEvent(pool, event) {
     }
     const [orders] = await connection.query('SELECT * FROM store_orders WHERE id = ? LIMIT 1 FOR UPDATE', [orderId]);
     const order = orders[0];
-    if (!order || order.provider_mode !== 'sandbox'
+    if (!order || order.provider_mode !== eventMode
         || (order.provider_transaction_id && order.provider_transaction_id !== transactionId)
         || order.currency !== currency || Number(order.amount_minor) !== amountMinor) {
       await connection.query("UPDATE payment_webhook_events SET processing_status = 'rejected' WHERE event_id = ?", [event.id]);
@@ -432,14 +469,18 @@ export function createYouCanPayWebhookHandler({
   pool,
   privateKey = process.env.YOUCANPAY_SANDBOX_PRIVATE_KEY,
   publicKey = process.env.YOUCANPAY_SANDBOX_PUBLIC_KEY,
+  livePrivateKey = process.env.YOUCANPAY_PRIVATE_KEY,
+  livePublicKey = process.env.YOUCANPAY_PUBLIC_KEY,
 } = {}) {
   if (!pool || typeof pool.getConnection !== 'function') throw new TypeError('pool is required');
+  const mode = resolvePaymentsMode(livePrivateKey, livePublicKey, privateKey, publicKey);
+  const activePrivateKey = mode === 'live' ? livePrivateKey : privateKey;
   return async (req, res) => {
     const rawBody = req.body;
     const signature = req.headers['x-youcanpay-signature'];
     if (!Buffer.isBuffer(rawBody)) return res.status(400).json({ error: 'invalid_webhook' });
-    if (!hasSandboxKeyPair(privateKey, publicKey)) return res.status(503).json({ error: 'webhook_not_configured' });
-    if (!verifyYouCanPaySignature(rawBody, signature, privateKey)) return res.status(403).json({ error: 'invalid_signature' });
+    if (!mode) return res.status(503).json({ error: 'webhook_not_configured' });
+    if (!verifyYouCanPaySignature(rawBody, signature, activePrivateKey)) return res.status(403).json({ error: 'invalid_signature' });
     let event;
     try { event = JSON.parse(rawBody.toString('utf8')); }
     catch { return res.status(400).json({ error: 'invalid_webhook' }); }

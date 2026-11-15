@@ -1,7 +1,7 @@
 import { createPool, migrate, migrateProfileAddress } from './db.js';
 import { migrateMailQueue } from './mail-queue.js';
 import { migrateRetentionIndexes } from './maintenance.js';
-import { migratePayments, migrateOrderShipping } from './payments.js';
+import { migratePayments, migrateOrderShipping, migrateOrderMode } from './payments.js';
 import { migratePaymentMailQueue } from './payment-mail-queue.js';
 
 const pool = createPool();
@@ -11,6 +11,7 @@ try {
   await migrateMailQueue(pool);
   await migratePayments(pool);
   await migrateOrderShipping(pool);
+  await migrateOrderMode(pool);
   await migratePaymentMailQueue(pool);
   await migrateRetentionIndexes(pool);
   console.log('Account, payment, email-queue, and retention schemas are ready.');
