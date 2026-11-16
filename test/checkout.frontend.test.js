@@ -228,9 +228,10 @@ test('the cash-on-delivery button appears only for Morocco and sends everyone el
   await openCheckoutPanel();
   const codButton = document.querySelector('.checkout-confirm-cod');
   const note = document.querySelector('[data-checkout-cod-note]');
-  // No country chosen yet: cash on delivery is not offered.
+  // No country chosen yet: cash on delivery is not offered, with a neutral note.
   assert.equal(codButton.hidden, true);
   assert.equal(note.hidden, false);
+  assert.equal(note.textContent, 'Cash on delivery is only available in Morocco.');
   // Card is not offered either while the payment account is in review.
   assert.equal(document.querySelector('.checkout-pay-card'), null);
 
@@ -240,6 +241,7 @@ test('the cash-on-delivery button appears only for Morocco and sends everyone el
   countrySelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.equal(codButton.hidden, true, 'no cash on delivery outside Morocco');
   assert.equal(note.hidden, false);
+  assert.match(note.textContent, /Oops — cash on delivery is only available in Morocco\. You can either pay by bank transfer or through WhatsApp\./u);
 
   countrySelect.value = 'MA';
   countrySelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));

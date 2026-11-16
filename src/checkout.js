@@ -178,15 +178,20 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     };
   }
 
-  // Cash on delivery only serves Morocco; international customers order via
-  // WhatsApp instead. The button and its note follow the chosen country.
+  // Cash on delivery only serves Morocco; international customers pay by bank
+  // transfer or WhatsApp. The button and its note follow the chosen country.
   function updateCodAvailability() {
     const countrySelect = query('.checkout-details-form select[name="shippingCountry"]');
-    const codAvailable = String(countrySelect?.value || '').trim().toUpperCase() === 'MA';
+    const country = String(countrySelect?.value || '').trim().toUpperCase();
+    const codAvailable = country === 'MA';
     const codButton = query('.checkout-confirm-cod');
     if (codButton) codButton.hidden = !codAvailable;
     const note = query('[data-checkout-cod-note]');
-    if (note) note.hidden = codAvailable;
+    if (!note) return;
+    note.hidden = codAvailable;
+    note.textContent = country
+      ? 'Oops — cash on delivery is only available in Morocco. You can either pay by bank transfer or through WhatsApp.'
+      : 'Cash on delivery is only available in Morocco.';
   }
 
   function countryName(iso2) {
@@ -422,7 +427,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     }
     // The button is hidden outside Morocco, but Enter in a field could still submit.
     if (details.shipping.country !== 'MA') {
-      setStatus('Cash on delivery is only available in Morocco. Send your order on WhatsApp and we will arrange payment together.');
+      setStatus('Oops — cash on delivery is only available in Morocco. You can either pay by bank transfer or through WhatsApp.');
       return;
     }
     const submit = query('.checkout-confirm-cod');
@@ -448,7 +453,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (body.error === 'try_again_later') throw new Error('Too many checkout attempts. Please wait a few minutes and try again.');
-        if (body.error === 'cod_not_available') throw new Error('Cash on delivery is only available in Morocco — send your order on WhatsApp instead.');
+        if (body.error === 'cod_not_available') throw new Error('Oops — cash on delivery is only available in Morocco. You can either pay by bank transfer or through WhatsApp.');
         if (body.error === 'invalid_cart' || body.error === 'invalid_checkout') throw new Error('Please check your cart and contact details, then try again.');
         throw new Error('We could not record your order. Please try again or contact us for help.');
       }
