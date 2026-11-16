@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file-if-missing=.env server/index.js --dev",
+    "dev": "node --env-file=.env server/index.js --dev",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node server/index.js",
