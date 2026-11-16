@@ -28,6 +28,8 @@ function safeErrorMessage(value) {
 // Same pen icon the account page uses for its edit buttons.
 const PEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M17 3a2.83 2.83 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>';
 
+const WHATSAPP_ORDER_NUMBER = '33768353638';
+
 export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount, renderCartItems }) {
   if (!cart) throw new TypeError('Cart is required');
   let paymentElement = null;
@@ -38,6 +40,10 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   let profile = null;
   let profileRequested = false;
   let shippingCaptured = false;
+  // The confirmed cash-on-delivery order, kept so the confirmation step can
+  // still hand the details over to WhatsApp.
+  let codOrder = null;
+  let codDetails = null;
 
   const query = (selector) => document.querySelector(selector);
   const getStatus = () => query('.checkout-status');
@@ -50,10 +56,13 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   // filled when the checkout opens. Both helpers are idempotent.
   function ensureCheckoutSelects() {
     hydratePhoneCountrySelectors(document);
-    // The delivery country select mirrors the account page's country list.
-    const shippingCountrySelect = query('.checkout-shipping-form select[name="shippingCountry"]');
-    if (shippingCountrySelect && shippingCountrySelect.options.length <= 1) {
-      shippingCountrySelect.insertAdjacentHTML('beforeend', countryNameOptionsMarkup());
+    // Both country selects (checkout details + post-payment delivery form)
+    // mirror the account page's country list.
+    for (const scope of ['.checkout-details-form', '.checkout-shipping-form']) {
+      const countrySelect = document.querySelector(`${scope} select[name="shippingCountry"]`);
+      if (countrySelect && countrySelect.options.length <= 1) {
+        countrySelect.insertAdjacentHTML('beforeend', countryNameOptionsMarkup());
+      }
     }
   }
 
@@ -74,23 +83,25 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       .catch(() => { /* guests simply keep typing manually */ });
   }
 
+  // Fills empty fields from the profile and reports whether the value the
+  // order would use really is the profile's (so a customer who already typed
+  // something different keeps editing manually instead of seeing a summary).
+  function owned(form, selector, value) {
+    const input = form.querySelector(selector);
+    if (!input) return false;
+    const expected = String(value ?? '');
+    if (!input.value && expected) {
+      input.value = expected;
+      return true;
+    }
+    return input.value.trim() === expected.trim();
+  }
+
   function prefillCheckoutForm() {
     const form = query('.checkout-details-form');
     if (!form || form.hidden || !profile) return;
-    // Fills empty fields from the profile and reports whether the value the
-    // order would use really is the profile's (so a customer who already typed
-    // something different keeps editing manually instead of seeing a summary).
-    const owned = (selector, value) => {
-      const input = form.querySelector(selector);
-      if (!input) return false;
-      if (!input.value && value) {
-        input.value = String(value);
-        return true;
-      }
-      return input.value.trim() === String(value ?? '').trim();
-    };
-    const nameOwned = owned('input[name="customerName"]', profile.name);
-    const emailOwned = owned('input[name="customerEmail"]', profile.email);
+    const nameOwned = owned(form, 'input[name="customerName"]', profile.name);
+    const emailOwned = owned(form, 'input[name="customerEmail"]', profile.email);
     const identity = query('[data-checkout-identity]');
     const summary = query('[data-checkout-account-summary]');
     const pen = query('[data-checkout-identity-pen]');
@@ -116,6 +127,68 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
         if (phoneField) phoneField.hidden = true;
       }
     }
+
+    // Saved delivery address: same summary + pen treatment as the identity line.
+    const address = profileAddress();
+    const addressSummary = query('[data-checkout-address-summary]');
+    const addressPen = query('[data-checkout-address-pen]');
+    const addressBlock = query('[data-checkout-address]');
+    if (address && addressSummary && addressPen && addressBlock) {
+      const line1Owned = owned(form, 'input[name="shippingLine1"]', address.line1);
+      const line2Owned = owned(form, 'input[name="shippingLine2"]', address.line2 || '');
+      const cityOwned = owned(form, 'input[name="shippingCity"]', address.city);
+      const postalOwned = owned(form, 'input[name="shippingPostalCode"]', address.postalCode);
+      const countrySelect = form.querySelector('select[name="shippingCountry"]');
+      let countryOwned = false;
+      if (countrySelect) {
+        if (!countrySelect.value && countrySelect.options.length > 1) {
+          countrySelect.value = address.country;
+          countryOwned = true;
+        } else {
+          countryOwned = countrySelect.value === address.country;
+        }
+      }
+      if (line1Owned && line2Owned && cityOwned && postalOwned && countryOwned) {
+        hideAddressFields(form);
+        const second = address.line2 ? `, ${address.line2}` : '';
+        addressSummary.textContent = `Delivering to: ${address.line1}${second}, ${address.city} ${address.postalCode}, ${countryName(address.country)}`;
+        addressSummary.hidden = false;
+        addressBlock.hidden = false;
+        addressPen.innerHTML = PEN_ICON;
+      } else {
+        // A partially-saved address stays editable; fill what we can.
+        if (cityOwned && !line2Owned) owned(form, 'input[name="shippingLine2"]', '');
+      }
+    }
+  }
+
+  function profileAddress() {
+    if (!profile?.addressLine1?.trim()) return null;
+    const city = String(profile.city || '').trim();
+    const postalCode = String(profile.postalCode || '').trim();
+    const country = String(profile.country || '').trim();
+    if (!city || !postalCode || !country) return null;
+    return {
+      line1: profile.addressLine1,
+      line2: profile.addressLine2 || '',
+      city,
+      postalCode,
+      country,
+    };
+  }
+
+  function countryName(iso2) {
+    const countrySelect = document.querySelector('.checkout-details-form select[name="shippingCountry"]');
+    const option = countrySelect instanceof HTMLSelectElement
+      ? Array.from(countrySelect.options).find((candidate) => candidate.value === iso2)
+      : null;
+    return option ? option.textContent : iso2;
+  }
+
+  function hideAddressFields(form) {
+    for (const node of form.querySelectorAll('[data-checkout-address-label]')) {
+      node.hidden = true;
+    }
   }
 
   // The pen reopens the fields so the customer can verify or correct them.
@@ -132,19 +205,15 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     query('input[name="customerName"]')?.focus();
   }
 
-  function shippingFromProfile() {
-    if (!profile?.addressLine1?.trim()) return null;
-    const city = String(profile.city || '').trim();
-    const postalCode = String(profile.postalCode || '').trim();
-    const country = String(profile.country || '').trim();
-    if (!city || !postalCode || !country) return null;
-    return {
-      line1: profile.addressLine1,
-      line2: profile.addressLine2 || '',
-      city,
-      postalCode,
-      country,
-    };
+  function revealAddressFields() {
+    const addressBlock = query('[data-checkout-address]');
+    const form = query('.checkout-details-form');
+    if (addressBlock) addressBlock.hidden = true;
+    if (!form) return;
+    for (const node of form.querySelectorAll('[data-checkout-address-label]')) {
+      node.removeAttribute('hidden');
+    }
+    form.querySelector('input[name="shippingLine1"]')?.focus();
   }
 
   function resetCheckout() {
@@ -152,16 +221,19 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     try { paymentElement?.destroy?.(); } catch { /* provider iframe cleanup is best-effort */ }
     paymentElement = null;
     checkoutSession = null;
+    codOrder = null;
+    codDetails = null;
     const panel = query('.checkout-panel');
     const items = query('.cart-items');
     const checkoutButton = query('.checkout-btn');
     const whatsappButton = query('.checkout-whatsapp');
     const form = query('.checkout-details-form');
     const paymentStage = query('.checkout-payment-stage');
+    const orderStage = query('.checkout-order-stage');
     const shippingStage = query('.checkout-shipping-stage');
     const shippingForm = query('.checkout-shipping-form');
     const shippingSubmit = query('.checkout-shipping-submit');
-    const submit = query('.checkout-create-session');
+    const submit = query('.checkout-confirm-cod');
     const confirm = query('.checkout-confirm-btn');
     const back = query('.checkout-back');
     if (panel) {
@@ -189,8 +261,30 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       }
       const phoneField = form.querySelector('.checkout-phone-field');
       if (phoneField) phoneField.hidden = false;
+      const addressBlock = query('[data-checkout-address]');
+      if (addressBlock) addressBlock.hidden = true;
+      const addressSummary = query('[data-checkout-address-summary]');
+      if (addressSummary) {
+        addressSummary.hidden = true;
+        addressSummary.textContent = '';
+      }
+      const addressPen = query('[data-checkout-address-pen]');
+      if (addressPen) {
+        addressPen.setAttribute('aria-expanded', 'false');
+        addressPen.innerHTML = '';
+      }
+      for (const node of form.querySelectorAll('[data-checkout-address-label]')) {
+        node.removeAttribute('hidden');
+      }
     }
     if (paymentStage) paymentStage.hidden = true;
+    if (orderStage) {
+      orderStage.hidden = true;
+      const message = orderStage.querySelector('[data-checkout-order-message]');
+      const summary = orderStage.querySelector('[data-checkout-order-summary]');
+      if (message) message.textContent = '';
+      if (summary) summary.textContent = '';
+    }
     if (shippingStage) shippingStage.hidden = true;
     if (shippingForm) shippingForm.reset();
     if (shippingSubmit) shippingSubmit.disabled = false;
@@ -233,11 +327,62 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     prefillCheckoutForm();
     const nameField = query('input[name="customerName"]');
     // A guest types their details; a signed-in customer jumps straight to the button.
-    if (nameField && nameField.closest('label')?.hidden) query('.checkout-create-session')?.focus();
+    if (nameField && nameField.closest('label')?.hidden) query('.checkout-confirm-cod')?.focus();
     else nameField?.focus();
   }
 
-  async function createCheckoutSession(event) {
+  // Shared validation so cash-on-delivery, card, and WhatsApp orders all carry
+  // the same required contact + delivery details. The `focus` entry is a
+  // zero-arg function callers invoke with `details.focus?.()`.
+  function validateDetails(form) {
+    if (!(form instanceof HTMLFormElement)) return null;
+    const focusField = (element) => (element ? () => element.focus() : undefined);
+    const phone = phoneValueFromForm(form, 'customerPhone');
+    if (!phone.ok) {
+      return { ok: false, message: phone.message, focus: focusField(phone.focus) };
+    }
+    // An empty phone passes the optional-field helper, but a courier order
+    // can never ship without a way to reach the customer.
+    if (!phone.value) {
+      return {
+        ok: false,
+        message: 'Please choose a country and enter your phone number so we can arrange delivery.',
+        focus: focusField(form.querySelector('input[name="customerPhone"]')),
+      };
+    }
+    const shipping = {
+      line1: String(form.querySelector('input[name="shippingLine1"]')?.value || '').trim(),
+      line2: String(form.querySelector('input[name="shippingLine2"]')?.value || '').trim(),
+      city: String(form.querySelector('input[name="shippingCity"]')?.value || '').trim(),
+      postalCode: String(form.querySelector('input[name="shippingPostalCode"]')?.value || '').trim(),
+      country: String(form.querySelector('select[name="shippingCountry"]')?.value || '').trim(),
+    };
+    const required = [
+      ['line1', 'input[name="shippingLine1"]'],
+      ['city', 'input[name="shippingCity"]'],
+      ['postalCode', 'input[name="shippingPostalCode"]'],
+      ['country', 'select[name="shippingCountry"]'],
+    ];
+    const missing = required.find(([key]) => !shipping[key]);
+    if (missing) {
+      return {
+        ok: false,
+        message: 'Please complete the delivery address so we know where to send your order.',
+        focus: focusField(form.querySelector(missing[1])),
+      };
+    }
+    return {
+      ok: true,
+      customer: {
+        name: String(form.querySelector('input[name="customerName"]')?.value || '').trim(),
+        email: String(form.querySelector('input[name="customerEmail"]')?.value || '').trim(),
+        phone: phone.value,
+      },
+      shipping,
+    };
+  }
+
+  async function confirmCodOrder(event) {
     event.preventDefault();
     if (!cart.getItems().length) {
       showToast?.('Your cart is empty');
@@ -247,39 +392,104 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     // This handler is delegated from document, so currentTarget is document.
     // Use the submitted form itself for validation and FormData construction.
     const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    const submit = query('.checkout-create-session');
-    const paymentStage = query('.checkout-payment-stage');
-    const generationAtStart = generation;
-    const phone = phoneValueFromForm(form, 'customerPhone');
-    if (!phone.ok) {
-      setStatus(phone.message);
-      phone.focus?.();
+    const details = validateDetails(form);
+    if (!details.ok) {
+      setStatus(details.message);
+      details.focus?.();
       return;
     }
+    const submit = query('.checkout-confirm-cod');
+    const generationAtStart = generation;
     if (submit) submit.disabled = true;
-    setStatus('Preparing a secure card payment…');
+    setStatus('Placing your order…');
     try {
-      const formData = new FormData(form);
-      const shipping = shippingFromProfile();
       const response = await fetch('/api/payments/checkout', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer: {
-            name: String(formData.get('customerName') || '').trim(),
-            email: String(formData.get('customerEmail') || '').trim(),
-            phone: phone.value,
-          },
-          // Signed-in customers with a saved address attach it here and skip
-          // the post-payment delivery step.
-          shipping: shipping ?? undefined,
+          customer: details.customer,
+          shipping: details.shipping,
           items: cart.getItems().map((item) => ({
             productId: item.productId,
             option: item.option,
             quantity: item.quantity,
           })),
+          paymentMethod: 'cod',
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (body.error === 'try_again_later') throw new Error('Too many checkout attempts. Please wait a few minutes and try again.');
+        if (body.error === 'invalid_cart' || body.error === 'invalid_checkout') throw new Error('Please check your cart and contact details, then try again.');
+        throw new Error('We could not record your order. Please try again or contact us for help.');
+      }
+      if (generationAtStart !== generation) return;
+      if (body.mode !== 'cod' || typeof body.orderReference !== 'string') {
+        throw new Error('The order response was incomplete. Please try again.');
+      }
+      codOrder = body;
+      codDetails = details;
+      for (const item of cart.getItems()) cart.removeItem(item.key);
+      updateCartCount?.();
+      renderCartItems?.();
+      form.hidden = true;
+      const second = details.shipping.line2 ? `, ${details.shipping.line2}` : '';
+      const message = query('[data-checkout-order-message]');
+      const summary = query('[data-checkout-order-summary]');
+      if (message) {
+        message.textContent = `Order received — ref ${body.orderReference}. You pay ${formatCurrency(body.amountMinor / 100)} in cash when it is delivered.`;
+      }
+      if (summary) {
+        summary.textContent = `Order for ${details.customer.name} — delivering to: ${details.shipping.line1}${second}, ${details.shipping.city} ${details.shipping.postalCode}. We will contact you to confirm.`;
+      }
+      const orderStage = query('.checkout-order-stage');
+      if (orderStage) orderStage.hidden = false;
+      const back = query('.checkout-back');
+      if (back) back.textContent = 'Return to cart';
+      query('.checkout-whatsapp-send')?.focus();
+      setStatus('');
+    } catch (error) {
+      if (generationAtStart !== generation) return;
+      if (submit) submit.disabled = false;
+      setStatus(safeErrorMessage(error?.message));
+    }
+  }
+
+  async function startCardPayment() {
+    if (!cart.getItems().length) {
+      showToast?.('Your cart is empty');
+      resetCheckout();
+      return;
+    }
+    const form = query('.checkout-details-form');
+    const details = validateDetails(form);
+    if (!details.ok) {
+      setStatus(details.message);
+      details.focus?.();
+      return;
+    }
+    const submit = query('.checkout-confirm-cod');
+    const paymentStage = query('.checkout-payment-stage');
+    const generationAtStart = generation;
+    if (submit) submit.disabled = true;
+    setStatus('Preparing a secure card payment…');
+    try {
+      const response = await fetch('/api/payments/checkout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: details.customer,
+          // The delivery address is required in the form now, so card orders
+          // are created complete and skip the post-payment delivery step.
+          shipping: details.shipping,
+          items: cart.getItems().map((item) => ({
+            productId: item.productId,
+            option: item.option,
+            quantity: item.quantity,
+          })),
+          paymentMethod: 'card',
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -296,14 +506,10 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
         || typeof body.token !== 'string' || typeof body.publicKey !== 'string') {
         throw new Error('The payment response was incomplete. Please try again.');
       }
-      shippingCaptured = Boolean(shipping);
+      shippingCaptured = Boolean(details.shipping);
       checkoutSession = {
         ...body,
-        customer: {
-          name: String(formData.get('customerName') || '').trim(),
-          email: String(formData.get('customerEmail') || '').trim(),
-          phone: phone.value,
-        },
+        customer: details.customer,
       };
       if (paymentStage) paymentStage.hidden = false;
       form.hidden = true;
@@ -382,17 +588,47 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     }
   }
 
+  function whatsappOrderText(details) {
+    const items = cart.getItems();
+    const lines = items
+      .map((item) => `• ${item.productName} (${item.option}) × ${item.quantity} — ${formatCurrency(item.price * item.quantity)}`)
+      .join('\n');
+    let message = `Hello SilkItElegantly, I'd like to order:\n${lines}\n\nTotal: ${formatCurrency(cart.getTotal())}`;
+    if (details) {
+      const second = details.shipping.line2 ? `, ${details.shipping.line2}` : '';
+      message += `\n\nName: ${details.customer.name}\nPhone: ${details.customer.phone}\nAddress: ${details.shipping.line1}${second}, ${details.shipping.city} ${details.shipping.postalCode}, ${details.shipping.country}`;
+    }
+    return message;
+  }
+
+  function openWhatsApp(message) {
+    window.open(`https://wa.me/${WHATSAPP_ORDER_NUMBER}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+  }
+
+  // The in-panel button: the details form must be complete first.
   function checkoutByWhatsApp() {
     const items = cart.getItems();
     if (!items.length) {
       showToast?.('Your cart is empty');
       return;
     }
-    const lines = items
-      .map((item) => `• ${item.productName} (${item.option}) × ${item.quantity} — ${formatCurrency(item.price * item.quantity)}`)
-      .join('\n');
-    const message = `Hello SilkItElegantly, I'd like to order:\n${lines}\n\nTotal: ${formatCurrency(cart.getTotal())}`;
-    window.open(`https://wa.me/33768353638?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+    const details = validateDetails(query('.checkout-details-form'));
+    if (!details.ok) {
+      setStatus(details.message);
+      details.focus?.();
+      return;
+    }
+    openWhatsApp(whatsappOrderText(details));
+  }
+
+  // Confirmation-step button: replays the order that was already recorded.
+  function sendCodOrderOnWhatsApp() {
+    if (!codOrder || !codDetails) {
+      showToast?.('Your order details are not available right now');
+      return;
+    }
+    const message = `Hello SilkItElegantly, I just placed order ${codOrder.orderReference} (cash on delivery):\n\nName: ${codDetails.customer.name}\nPhone: ${codDetails.customer.phone}\nAddress: ${codDetails.shipping.line1}${codDetails.shipping.line2 ? `, ${codDetails.shipping.line2}` : ''}, ${codDetails.shipping.city} ${codDetails.shipping.postalCode}, ${codDetails.shipping.country}\nTotal: ${formatCurrency(codOrder.amountMinor / 100)}`;
+    openWhatsApp(message);
   }
 
   function finishOrderStep(orderReference) {
@@ -507,7 +743,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       const phone = phoneValueFromForm(form, 'shippingPhone');
       if (!phone.ok) {
         setStatus(phone.message);
-        phone.focus?.();
+        if (phone.focus) phone.focus.focus();
         return;
       }
       shippingPhone = phone.value;
@@ -556,7 +792,9 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       return;
     }
     if (event.target.closest('.checkout-whatsapp')) {
-      checkoutByWhatsApp();
+      // The cart footer's WhatsApp line now funnels through the checkout form
+      // so the required details are collected in one place.
+      openCheckout();
       return;
     }
     if (event.target.closest('.checkout-back')) {
@@ -567,10 +805,28 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       void confirmPayment();
       return;
     }
+    if (event.target.closest('.checkout-pay-card')) {
+      void startCardPayment();
+      return;
+    }
+    if (event.target.closest('.checkout-whatsapp-order')) {
+      checkoutByWhatsApp();
+      return;
+    }
+    if (event.target.closest('.checkout-whatsapp-send')) {
+      sendCodOrderOnWhatsApp();
+      return;
+    }
     if (event.target.closest('[data-checkout-identity-pen]')) {
       const pen = event.target.closest('[data-checkout-identity-pen]');
       pen.setAttribute('aria-expanded', 'true');
       revealIdentityFields();
+      return;
+    }
+    if (event.target.closest('[data-checkout-address-pen]')) {
+      const pen = event.target.closest('[data-checkout-address-pen]');
+      pen.setAttribute('aria-expanded', 'true');
+      revealAddressFields();
       return;
     }
     const modal = query('#cart-modal');
@@ -578,7 +834,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   });
 
   document.addEventListener('submit', (event) => {
-    if (event.target.matches('.checkout-details-form')) void createCheckoutSession(event);
+    if (event.target.matches('.checkout-details-form')) void confirmCodOrder(event);
     else if (event.target.matches('.checkout-shipping-form')) void saveShippingDetails(event);
   });
 

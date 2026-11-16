@@ -9,7 +9,7 @@
     <div class="cart-items"></div>
 
     <section class="checkout-panel" aria-label="Secure card checkout" aria-hidden="true" hidden>
-      <p class="checkout-sandbox-note">Charged in MAD, securely — card details are entered on YouCan Pay's encrypted form.</p>
+      <p class="checkout-sandbox-note">Prices in MAD — choose cash on delivery or secure card payment.</p>
       <form class="checkout-details-form">
         <div class="checkout-identity" data-checkout-identity hidden>
           <p class="checkout-account-summary" data-checkout-account-summary></p>
@@ -22,7 +22,7 @@
           <input type="email" name="customerEmail" autocomplete="email" maxlength="254" required>
         </label>
         <div class="phone-field checkout-phone-field">
-          <label for="checkout-customer-phone">Phone (optional)</label>
+          <label for="checkout-customer-phone">Phone</label>
           <div class="phone-field-controls">
             <select class="phone-country-select" data-phone-country="customerPhone" aria-label="Country calling code" autocomplete="country">
               <option value="">Select country</option>
@@ -31,11 +31,40 @@
           </div>
           <p class="phone-field-error" data-phone-error="customerPhone" role="status" aria-live="polite" hidden></p>
         </div>
-        <button class="checkout-create-session" type="submit">Continue to secure card form</button>
+        <div class="checkout-identity" data-checkout-address hidden>
+          <p class="checkout-account-summary" data-checkout-address-summary></p>
+          <button class="checkout-identity-pen" type="button" data-checkout-address-pen aria-expanded="false" aria-label="Check your delivery address">&nbsp;</button>
+        </div>
+        <label data-checkout-address-label>Street address
+          <input type="text" name="shippingLine1" autocomplete="address-line1" maxlength="200" required>
+        </label>
+        <label data-checkout-address-label>Apartment, suite (optional)
+          <input type="text" name="shippingLine2" autocomplete="address-line2" maxlength="200">
+        </label>
+        <label data-checkout-address-label>City
+          <input type="text" name="shippingCity" autocomplete="address-level2" maxlength="120" required>
+        </label>
+        <label data-checkout-address-label>Postal code
+          <input type="text" name="shippingPostalCode" autocomplete="postal-code" maxlength="20" required>
+        </label>
+        <label data-checkout-address-label for="checkout-country">Country</label>
+        <select id="checkout-country" class="checkout-country" name="shippingCountry" autocomplete="country-name" data-checkout-address-label required>
+          <option value="">Select country</option>
+        </select>
+        <button class="checkout-confirm-cod" type="submit">Confirm order · pay on delivery</button>
+        <div class="checkout-alt-actions">
+          <button class="checkout-pay-card" type="button">Pay by card instead</button>
+          <button class="checkout-whatsapp-order" type="button">Order via WhatsApp</button>
+        </div>
       </form>
       <div class="checkout-payment-stage" hidden>
         <div id="youcanpay-element"></div>
         <button class="checkout-confirm-btn" type="button" disabled>Pay securely</button>
+      </div>
+      <div class="checkout-order-stage" hidden>
+        <p class="checkout-order-message" data-checkout-order-message></p>
+        <p class="checkout-order-summary" data-checkout-order-summary></p>
+        <button class="checkout-whatsapp-send" type="button">Send order on WhatsApp</button>
       </div>
       <div class="checkout-shipping-stage" hidden>
         <form class="checkout-shipping-form">
@@ -79,9 +108,9 @@
     <div class="cart-footer">
       <div class="cart-total">
         <span>Total</span>
-        <strong class="footer-total">&euro;0</strong>
+        <strong class="footer-total">MAD 0</strong>
       </div>
-      <button class="checkout-btn" type="button">Pay by card</button>
+      <button class="checkout-btn" type="button">Checkout</button>
       <button class="checkout-whatsapp" type="button">Prefer WhatsApp? Talk to us</button>
     </div>
   </div>

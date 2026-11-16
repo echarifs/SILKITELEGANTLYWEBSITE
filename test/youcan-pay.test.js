@@ -501,7 +501,7 @@ function createRoutePool({ orderRows = [] } = {}) {
   return { pool, orders, attempted };
 }
 
-function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, livePrivateKey: routeLivePrivate, livePublicKey: routeLivePublic } = {}) {
+function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, livePrivateKey: routeLivePrivate, livePublicKey: routeLivePublic, mail: routeMail } = {}) {
   const app = express();
   app.use(createPaymentsRouter({
     pool,
@@ -510,6 +510,7 @@ function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, l
     publicKey: routePublic ?? publicKey,
     livePrivateKey: routeLivePrivate,
     livePublicKey: routeLivePublic,
+    mail: routeMail,
     fetchImpl: async (url) => ({
       ok: true,
       json: async () => ({ token: url === YOUCANPAY_LIVE_TOKENIZE_URL ? 'route_live_token_123' : 'route_token_123', transaction_id: 'cfdf4b2e-93f2-4f0f-8b7a-5f2d1a0c9e8b' }),
@@ -520,7 +521,7 @@ function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, l
 
 const CHECKOUT_SHIPPING = { line1: '12 Silk Road', line2: 'Riad wing', city: 'Nouakchott', postalCode: '0000', country: 'MR' };
 
-test('checkout stores an optional delivery address at creation and returns a session', async () => {
+test('checkout requires the delivery address and returns a card session', async () => {
   const fake = createRoutePool();
   const response = await request(paymentsApp(fake.pool)).post('/checkout')
     .set('Origin', 'https://shop.example.invalid')
@@ -535,9 +536,10 @@ test('checkout stores an optional delivery address at creation and returns a ses
   assert.ok(response.body.orderId);
   const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
   assert.ok(insert, 'order insert ran');
-  assert.ok(insert.sql.includes('shipping_set_at'), 'shipping timestamp is written inline');
-  assert.equal(insert.params[7], 'sandbox', 'provider mode is stored with the order');
-  assert.deepEqual(insert.params.slice(8, 13), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR']);
+  assert.equal(insert.params[3], '+212612345678');
+  assert.equal(insert.params[7], 'youcanpay', 'card orders record the payment provider');
+  assert.equal(insert.params[8], 'sandbox', 'provider mode is stored with the order');
+  assert.deepEqual(insert.params.slice(9, 14), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR']);
 });
 
 test('checkout with live keys charges live and stores provider_mode = live', async () => {
@@ -546,7 +548,8 @@ test('checkout with live keys charges live and stores provider_mode = live', asy
     .set('Origin', 'https://shop.example.invalid')
     .set('Content-Type', 'application/json')
     .send({
-      customer: { name: 'Live Weaver', email: 'live@example.com', phone: '' },
+      customer: { name: 'Live Weaver', email: 'live@example.com', phone: '+212612345678' },
+      shipping: CHECKOUT_SHIPPING,
       items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
     });
   assert.equal(response.status, 201);
@@ -554,7 +557,7 @@ test('checkout with live keys charges live and stores provider_mode = live', asy
   assert.equal(response.body.token, 'route_live_token_123');
   assert.equal(response.body.publicKey, livePublicKey);
   const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
-  assert.equal(insert.params[7], 'live');
+  assert.equal(insert.params[8], 'live');
 });
 
 test('checkout without any usable key pair reports payments as unconfigured', async () => {
@@ -570,20 +573,79 @@ test('checkout without any usable key pair reports payments as unconfigured', as
   assert.equal(response.body.error, 'payments_not_configured');
 });
 
-test('checkout without a delivery address leaves the shipping columns null', async () => {
+test('checkout requires a delivery address, a phone, and a known payment method', async () => {
+  const base = {
+    customer: { name: 'Guest Weaver', email: 'guest@example.com', phone: '+212612345678' },
+    shipping: CHECKOUT_SHIPPING,
+    items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+  };
+  const cases = [
+    ['a missing delivery address', { ...base, shipping: undefined }],
+    ['a missing phone', { ...base, customer: { ...base.customer, phone: '' } }],
+    ['an unknown payment method', { ...base, paymentMethod: 'paypal' }],
+  ];
+  for (const [label, payload] of cases) {
+    const fake = createRoutePool();
+    const response = await request(paymentsApp(fake.pool)).post('/checkout')
+      .set('Origin', 'https://shop.example.invalid')
+      .set('Content-Type', 'application/json')
+      .send(payload);
+    assert.equal(response.status, 400, `checkout should reject ${label}`);
+    assert.equal(response.body.error, 'invalid_checkout');
+    assert.equal(fake.attempted.some(({ sql }) => sql.startsWith('INSERT INTO store_orders')), false, `no order is written for ${label}`);
+  }
+});
+
+test('cash-on-delivery orders skip the payment provider entirely and mail customer and owner once', async () => {
   const fake = createRoutePool();
-  const response = await request(paymentsApp(fake.pool)).post('/checkout')
+  const sent = [];
+  const mail = {
+    async sendOrderPlaced(input) { sent.push({ kind: 'order_placed', input }); },
+    async notifyOrderPlaced(input) { sent.push({ kind: 'owner_notice', input }); },
+  };
+  const response = await request(paymentsApp(fake.pool, { privateKey: 'pri_live_mismatched', publicKey, mail })).post('/checkout')
     .set('Origin', 'https://shop.example.invalid')
     .set('Content-Type', 'application/json')
     .send({
-      customer: { name: 'Guest Weaver', email: 'guest@example.com', phone: '' },
+      paymentMethod: 'cod',
+      customer: { name: 'Cash Weaver', email: 'cash@example.com', phone: '+212612345678' },
+      shipping: CHECKOUT_SHIPPING,
       items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
     });
   assert.equal(response.status, 201);
+  assert.equal(response.body.mode, 'cod');
+  assert.equal(response.body.currency, 'MAD');
+  assert.equal(response.body.amountMinor, 93500);
+  assert.ok(response.body.orderId);
+  assert.ok(response.body.orderReference);
+  assert.equal(response.body.token, undefined, 'cash on delivery never tokenizes a card');
   const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
-  assert.ok(insert);
-  assert.equal(insert.sql.includes('NULL, UTC_TIMESTAMP(3)'), true);
-  assert.deepEqual(insert.params.slice(8, 13), [null, null, null, null, null]);
+  assert.equal(insert.params[7], 'cod', 'the order records its cod provider');
+  assert.equal(insert.params[8], 'none', 'cod orders carry no provider mode');
+  assert.deepEqual(insert.params.slice(9, 14), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR']);
+  assert.deepEqual(sent.map(({ kind }) => kind), ['order_placed', 'owner_notice']);
+  assert.deepEqual(sent.map(({ input }) => input.orderId), [response.body.orderId, response.body.orderId]);
+  assert.equal(sent[1].input.phone, '+212612345678');
+  assert.equal(fake.attempted.some(({ sql }) => sql.startsWith('INSERT IGNORE INTO payment_mail_jobs')), false, 'cod stays out of the card payment mail queue');
+});
+
+test('a failing order email never fails a cash-on-delivery order', async () => {
+  const fake = createRoutePool();
+  const mail = {
+    async sendOrderPlaced() { throw new Error('smtp down'); },
+    async notifyOrderPlaced() { throw new Error('smtp down'); },
+  };
+  const response = await request(paymentsApp(fake.pool, { mail })).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      paymentMethod: 'cod',
+      customer: { name: 'Cash Weaver', email: 'cash@example.com', phone: '+212612345678' },
+      shipping: CHECKOUT_SHIPPING,
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(response.status, 201);
+  assert.equal(response.body.mode, 'cod');
 });
 
 test('delivery details accept the paid order once and validate the payer email', async () => {
@@ -592,7 +654,8 @@ test('delivery details accept the paid order once and validate the payer email',
     .set('Origin', 'https://shop.example.invalid')
     .set('Content-Type', 'application/json')
     .send({
-      customer: { name: 'Guest Weaver', email: 'guest@example.com', phone: '' },
+      customer: { name: 'Guest Weaver', email: 'guest@example.com', phone: '+212612345678' },
+      shipping: CHECKOUT_SHIPPING,
       items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
     });
   const seededOrder = [...seed.orders.values()][0];

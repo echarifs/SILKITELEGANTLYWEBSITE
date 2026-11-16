@@ -57,7 +57,7 @@ export async function migratePayments(pool) {
       shipping_country CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL,
       shipping_set_at DATETIME(3) NULL,
       CONSTRAINT store_orders_status_chk CHECK (status IN ('pending_payment', 'paid', 'payment_failed', 'partially_refunded', 'refunded')),
-      CONSTRAINT store_orders_mode_chk CHECK (provider_mode IN ('sandbox', 'live')),
+      CONSTRAINT store_orders_mode_chk CHECK (provider_mode IN ('sandbox', 'live', 'none')),
       CONSTRAINT store_orders_amount_chk CHECK (amount_minor > 0),
       UNIQUE KEY store_orders_provider_txn_unique (provider_transaction_id),
       KEY store_orders_email_created_idx (customer_email, created_at),
@@ -124,6 +124,27 @@ export async function migrateOrderMode(pool) {
   }
   await pool.query('INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, UTC_TIMESTAMP(3))', [ORDER_MODE_MIGRATION_ID]);
   return ORDER_MODE_MIGRATION_ID;
+}
+
+export const ORDER_COD_MIGRATION_ID = '008-order-cod-mode';
+
+// Opens provider_mode to 'none' for cash-on-delivery orders, which carry no
+// YouCan Pay transaction. Idempotent: guarded on the migration row.
+export async function migrateOrderCodMode(pool) {
+  if (!pool || typeof pool.query !== 'function') throw new TypeError('A MySQL pool is required');
+  const [applied] = await pool.query('SELECT id FROM schema_migrations WHERE id = ? LIMIT 1', [ORDER_COD_MIGRATION_ID]);
+  if (applied.length === 0) {
+    const [existing] = await pool.query(
+      `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_orders' AND CONSTRAINT_NAME = 'store_orders_mode_chk'`,
+    );
+    if (existing.length > 0) {
+      await pool.query('ALTER TABLE store_orders DROP CHECK store_orders_mode_chk');
+      await pool.query("ALTER TABLE store_orders ADD CONSTRAINT store_orders_mode_chk CHECK (provider_mode IN ('sandbox', 'live', 'none'))");
+    }
+  }
+  await pool.query('INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, UTC_TIMESTAMP(3))', [ORDER_COD_MIGRATION_ID]);
+  return ORDER_COD_MIGRATION_ID;
 }
 
 export function buildTrustedOrder(items) {
@@ -250,6 +271,7 @@ export function createPaymentsRouter({
   publicKey = process.env.YOUCANPAY_SANDBOX_PUBLIC_KEY,
   livePrivateKey = process.env.YOUCANPAY_PRIVATE_KEY,
   livePublicKey = process.env.YOUCANPAY_PUBLIC_KEY,
+  mail = null,
   fetchImpl = globalThis.fetch,
 } = {}) {
   if (!pool || typeof pool.query !== 'function' || typeof pool.getConnection !== 'function') throw new TypeError('pool is required');
@@ -261,18 +283,24 @@ export function createPaymentsRouter({
   router.use((_req, res, next) => { setSecurityHeaders(res); next(); });
   router.use(express.json({ limit: MAX_JSON_BYTES, type: 'application/json' }));
 
+  const orderReferenceFrom = (orderId) => orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
+
   router.post('/checkout', async (req, res, next) => {
     try {
       if (!isAllowedOrigin(requestOrigin(req), origins)) return res.status(403).json({ error: 'request_not_authorized' });
       if (!isJsonRequest(req)) return res.status(415).json({ error: 'json_required' });
-      if (!mode) return res.status(503).json({ error: 'payments_not_configured' });
       if (!validBodyObject(req.body) || !validBodyObject(req.body.customer)) return res.status(400).json({ error: 'invalid_checkout' });
+      // 'card' keeps the YouCan Pay flow; 'cod' records a cash-on-delivery order
+      // and needs no payment provider at all.
+      const paymentMethod = req.body.paymentMethod === undefined ? 'card' : req.body.paymentMethod;
+      if (paymentMethod !== 'cod' && paymentMethod !== 'card') return res.status(400).json({ error: 'invalid_checkout' });
+      if (paymentMethod === 'card' && !mode) return res.status(503).json({ error: 'payments_not_configured' });
       const name = validateName(req.body.customer.name);
       const email = normalizeEmail(req.body.customer.email);
       const phone = validatePhone(req.body.customer.phone);
-      if (!name || !email || phone === undefined) return res.status(400).json({ error: 'invalid_checkout' });
+      if (!name || !email || !phone) return res.status(400).json({ error: 'invalid_checkout' });
       const shipping = shippingFromBody(req.body.shipping);
-      if (shipping === undefined) return res.status(400).json({ error: 'invalid_checkout' });
+      if (!shipping) return res.status(400).json({ error: 'invalid_checkout' });
       if (!await checkoutRateAllowed(pool, req, email)) return res.status(429).json({ error: 'try_again_later' });
 
       let order;
@@ -280,16 +308,36 @@ export function createPaymentsRouter({
       catch { return res.status(400).json({ error: 'invalid_cart' }); }
 
       const orderId = crypto.randomUUID();
-      const shippingAt = shipping ? 'UTC_TIMESTAMP(3)' : 'NULL';
+      const provider = paymentMethod === 'cod' ? 'cod' : 'youcanpay';
+      const insertMode = paymentMethod === 'cod' ? 'none' : mode;
       await pool.query(`
         INSERT INTO store_orders
           (id, status, customer_name, customer_email, customer_phone, items_json, currency, amount_minor, provider, provider_mode,
            shipping_line1, shipping_line2, shipping_city, shipping_postal_code, shipping_country, shipping_set_at,
            created_at, updated_at)
-        VALUES (?, 'pending_payment', ?, ?, ?, ?, ?, ?, 'youcanpay', ?, ?, ?, ?, ?, ?, ${shippingAt}, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`, [
-        orderId, name, email, phone, JSON.stringify(order.lines), order.currency, order.amountMinor, mode,
-        shipping?.line1 ?? null, shipping?.line2 ?? null, shipping?.city ?? null, shipping?.postalCode ?? null, shipping?.country ?? null,
+        VALUES (?, 'pending_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`, [
+        orderId, name, email, phone, JSON.stringify(order.lines), order.currency, order.amountMinor, provider, insertMode,
+        shipping.line1, shipping.line2, shipping.city, shipping.postalCode, shipping.country,
       ]);
+
+      const orderReference = orderReferenceFrom(orderId);
+
+      if (paymentMethod === 'cod') {
+        for (const notify of [
+          { send: mail?.sendOrderPlaced, input: { email, name, orderId, amountMinor: order.amountMinor, currency: order.currency } },
+          { send: mail?.notifyOrderPlaced, input: { email, name, orderId, amountMinor: order.amountMinor, currency: order.currency, phone } },
+        ]) {
+          try { await notify.send?.call(mail, notify.input); }
+          catch { /* a failed email never fails the order itself */ }
+        }
+        return res.status(201).json({
+          orderId,
+          orderReference,
+          amountMinor: order.amountMinor,
+          currency: order.currency,
+          mode: 'cod',
+        });
+      }
 
       let providerToken;
       try {
@@ -313,7 +361,7 @@ export function createPaymentsRouter({
          WHERE id = ? AND status = 'pending_payment'`, [providerToken.transactionId, orderId]);
       res.status(201).json({
         orderId,
-        orderReference: orderId.replace(/-/gu, '').slice(0, 10).toUpperCase(),
+        orderReference,
         amountMinor: order.amountMinor,
         currency: order.currency,
         token: providerToken.token,

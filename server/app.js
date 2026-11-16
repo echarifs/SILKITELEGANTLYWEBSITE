@@ -71,7 +71,7 @@ export async function createApp({ pool, mail, sheets, allowedOrigins = accountOr
     },
   }));
   app.post('/api/webhooks/youcan-pay', express.raw({ type: 'application/json', limit: '64kb' }), createYouCanPayWebhookHandler({ pool }));
-  app.use('/api/payments', createPaymentsRouter({ pool, allowedOrigins }));
+  app.use('/api/payments', createPaymentsRouter({ pool, allowedOrigins, mail }));
   app.use('/api/auth', await createAuthRouter({ pool, mail, sheets, allowedOrigins, publicOrigin: resolvedPublicOrigin }));
   app.get('/health', async (req, res) => {
     try {

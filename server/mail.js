@@ -1,11 +1,13 @@
 import nodemailer from 'nodemailer';
 import addressParser from 'nodemailer/lib/addressparser/index.js';
 
-export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey = process.env.RESEND_API_KEY, mailFrom = process.env.MAIL_FROM, allowedOrigins = new Set() } = {}) {
+export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey = process.env.RESEND_API_KEY, mailFrom = process.env.MAIL_FROM, orderNoticeEmail = process.env.ORDER_NOTICE_EMAIL, allowedOrigins = new Set() } = {}) {
   let transport = null;
   let apiKey = '';
   let ready = false;
   let sender = '';
+  let ownerNotice = '';
+  try { ownerNotice = displaySender(orderNoticeEmail); } catch { ownerNotice = ''; }
   const apiRequested = Boolean(resendApiKey);
   if (apiRequested) {
     try {
@@ -117,6 +119,44 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     await deliver({ to: email, subject, text });
   }
 
+  function assertOrderEmailInput({ email, name, orderId, amountMinor, currency }) {
+    if (typeof email !== 'string' || email.length > 254 || /[\r\n\s]/u.test(email)
+        || typeof orderId !== 'string' || !/^[a-f0-9-]{36}$/iu.test(orderId)
+        || !Number.isSafeInteger(amountMinor) || amountMinor < 1 || !['EUR', 'MAD'].includes(currency)) {
+      throw new Error('INVALID_ORDER_EMAIL');
+    }
+  }
+
+  async function sendOrderPlaced({ email, name, orderId, amountMinor, currency }) {
+    if (!ready) throw new Error('EMAIL_UNAVAILABLE');
+    assertOrderEmailInput({ email, name, orderId, amountMinor, currency });
+    const safeName = String(name || '').replace(/[\r\n]/gu, ' ').slice(0, 128);
+    const orderReference = orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
+    const total = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amountMinor / 100);
+    await deliver({
+      to: email,
+      subject: `Order ${orderReference} received`,
+      text: `Hello ${safeName},\n\nWe received your order ${orderReference}.\nTotal: ${total}\nYou pay in cash when it is delivered. We will contact you to confirm the delivery.\n\nSilkItElegantly`,
+    });
+  }
+
+  async function notifyOrderPlaced({ email, name, orderId, amountMinor, currency, phone = null }) {
+    if (!ready) throw new Error('EMAIL_UNAVAILABLE');
+    assertOrderEmailInput({ email, name, orderId, amountMinor, currency });
+    if (phone !== null && (typeof phone !== 'string' || phone.length > 40 || /[\r\n]/u.test(phone))) {
+      throw new Error('INVALID_ORDER_EMAIL');
+    }
+    const safeName = String(name || '').replace(/[\r\n]/gu, ' ').slice(0, 128);
+    const safePhone = phone === null ? '' : String(phone).slice(0, 40);
+    const orderReference = orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
+    const total = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amountMinor / 100);
+    await deliver({
+      to: ownerNotice || sender,
+      subject: `New cash-on-delivery order ${orderReference}`,
+      text: `New cash-on-delivery order ${orderReference}.\nCustomer: ${safeName} (${email})${safePhone ? `\nPhone: ${safePhone}` : ''}\nTotal: ${total} — collected on delivery.\n\nSilkItElegantly`,
+    });
+  }
+
   async function sendOrderNotice({ email, name, orderId, amountMinor, currency, transactionId, refundAmountMinor = null }, type) {
     if (!ready) throw new Error('EMAIL_UNAVAILABLE');
     if (typeof email !== 'string' || email.length > 254 || /[\r\n\s]/u.test(email)
@@ -139,7 +179,7 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
       ? `Payment confirmed for order ${orderReference}`
       : `Refund update for order ${orderReference}`;
     const text = paymentConfirmation
-      ? `Hello ${safeName},\n\nYour sandbox card payment has been confirmed for order ${orderReference}.\nTotal: ${total}\nYouCan Pay transaction reference: ${safeReference}\n\nSilkItElegantly`
+      ? `Hello ${safeName},\n\nYour card payment has been confirmed for order ${orderReference}.\nTotal: ${total}\nYouCan Pay transaction reference: ${safeReference}\n\nSilkItElegantly`
       : `Hello ${safeName},\n\nA refund update has been received for order ${orderReference}.${refundTotal ? `\nRefund amount recorded: ${refundTotal}.` : ''}\nPlease allow your bank's normal processing time for the refund to appear.\nYouCan Pay transaction reference: ${safeReference}\n\nSilkItElegantly`;
     await deliver({ to: email, subject, text });
   }
@@ -149,6 +189,8 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     verifyConnection,
     sendVerification: (input) => send(input, 'verify-email'),
     sendPasswordReset: (input) => send(input, 'reset-password'),
+    sendOrderPlaced: (input) => sendOrderPlaced(input),
+    notifyOrderPlaced: (input) => notifyOrderPlaced(input),
     sendPaymentConfirmation: (input) => sendOrderNotice(input, 'payment_confirmation'),
     sendRefundNotification: (input) => sendOrderNotice(input, 'refund_notification'),
     close() { transport?.close(); },
