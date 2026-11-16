@@ -186,6 +186,18 @@ test('signed-in checkout shows identity and address summaries with pens, then co
   assert.match(document.querySelector('[data-checkout-order-message]').textContent, /Order received — ref CODORDER1/u);
   assert.match(document.querySelector('[data-checkout-order-summary]').textContent, /delivering to: 12 Silk Road/u);
   assert.equal(document.querySelector('.checkout-back').textContent, 'Return to cart');
+  // The address is saved to the account for the next visit.
+  const codSaveBox = document.querySelector('[data-checkout-save-cod-address]');
+  assert.equal(codSaveBox.hidden, false, 'signed-in customers get the save-address option');
+  assert.equal(codSaveBox.querySelector('input[name="saveCodAddressToAccount"]').checked, true);
+  await waitUntil(() => requests.some(({ url }) => url.endsWith('/api/auth/address')));
+  assert.deepEqual(requests.find(({ url }) => url.endsWith('/api/auth/address')).body, {
+    addressLine1: '12 Silk Road',
+    addressLine2: 'Riad wing',
+    city: 'Nouakchott',
+    postalCode: '0000',
+    country: 'MR',
+  });
   dom.window.close();
 });
 

@@ -76,6 +76,8 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
           prefillCheckoutForm();
           const saveBox = query('[data-checkout-save-account]');
           if (saveBox) saveBox.hidden = false;
+          const codSaveBox = query('[data-checkout-save-cod-address]');
+          if (codSaveBox) codSaveBox.hidden = false;
         }
       })
       .catch(() => { /* guests simply keep typing manually */ });
@@ -274,6 +276,8 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       for (const node of form.querySelectorAll('[data-checkout-address-label]')) {
         node.removeAttribute('hidden');
       }
+      const codSaveBox = query('[data-checkout-save-cod-address]');
+      if (codSaveBox) codSaveBox.hidden = true;
     }
     if (paymentStage) paymentStage.hidden = true;
     if (orderStage) {
@@ -310,6 +314,10 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       return;
     }
     resetCheckout();
+    if (profile) {
+      const codSaveBox = query('[data-checkout-save-cod-address]');
+      if (codSaveBox) codSaveBox.hidden = false;
+    }
     const panel = query('.checkout-panel');
     const items = query('.cart-items');
     const checkoutButton = query('.checkout-btn');
@@ -449,6 +457,18 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       if (back) back.textContent = 'Return to cart';
       query('.checkout-whatsapp-send')?.focus();
       setStatus('');
+      // Signed-in customers keep the address for their next visit.
+      const codSaveBox = query('[data-checkout-save-cod-address]');
+      const codSaveCheckbox = codSaveBox?.querySelector('input[name="saveCodAddressToAccount"]');
+      if (profile && codSaveCheckbox?.checked) {
+        void persistAddressToAccount({
+          line1: details.shipping.line1,
+          line2: details.shipping.line2,
+          city: details.shipping.city,
+          postalCode: details.shipping.postalCode,
+          country: details.shipping.country,
+        });
+      }
     } catch (error) {
       if (generationAtStart !== generation) return;
       if (submit) submit.disabled = false;
@@ -699,7 +719,14 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
           country: values.country,
         }),
       });
-      profile = { ...profile, ...values };
+      profile = {
+        ...profile,
+        addressLine1: values.line1,
+        addressLine2: values.line2,
+        city: values.city,
+        postalCode: values.postalCode,
+        country: values.country,
+      };
     } catch {
       // The order still has its delivery details; show a gentle note only.
       setStatus('Delivery details are saved for this order. The address could not be stored on your account right now.');

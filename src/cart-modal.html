@@ -51,6 +51,10 @@
         <select id="checkout-country" class="checkout-country" name="shippingCountry" autocomplete="country-name" data-checkout-address-label required>
           <option value="">Select country</option>
         </select>
+        <label class="checkout-save-account" data-checkout-save-cod-address hidden>
+          <input type="checkbox" name="saveCodAddressToAccount" value="true" checked />
+          <span>Save this address to my account</span>
+        </label>
         <button class="checkout-confirm-cod" type="submit">Confirm order · pay on delivery</button>
         <div class="checkout-alt-actions">
           <button class="checkout-pay-card" type="button">Pay by card instead</button>
