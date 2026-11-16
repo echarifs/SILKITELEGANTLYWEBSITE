@@ -127,22 +127,27 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     }
   }
 
-  async function sendOrderPlaced({ email, name, orderId, amountMinor, currency }) {
+  async function sendOrderPlaced({ email, name, orderId, amountMinor, currency, paymentMethod = 'cod' }) {
     if (!ready) throw new Error('EMAIL_UNAVAILABLE');
     assertOrderEmailInput({ email, name, orderId, amountMinor, currency });
+    if (!['cod', 'bank_transfer'].includes(paymentMethod)) throw new Error('INVALID_ORDER_EMAIL');
     const safeName = String(name || '').replace(/[\r\n]/gu, ' ').slice(0, 128);
     const orderReference = orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
     const total = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amountMinor / 100);
+    const paymentLine = paymentMethod === 'cod'
+      ? 'You pay in cash when it is delivered. We will contact you to confirm the delivery.'
+      : 'You pay by bank transfer; we will send you our bank details right away. We ship as soon as the transfer arrives.';
     await deliver({
       to: email,
       subject: `Order ${orderReference} received`,
-      text: `Hello ${safeName},\n\nWe received your order ${orderReference}.\nTotal: ${total}\nYou pay in cash when it is delivered. We will contact you to confirm the delivery.\n\nSilkItElegantly`,
+      text: `Hello ${safeName},\n\nWe received your order ${orderReference}.\nTotal: ${total}\n${paymentLine}\n\nSilkItElegantly`,
     });
   }
 
-  async function notifyOrderPlaced({ email, name, orderId, amountMinor, currency, phone = null }) {
+  async function notifyOrderPlaced({ email, name, orderId, amountMinor, currency, paymentMethod = 'cod', phone = null }) {
     if (!ready) throw new Error('EMAIL_UNAVAILABLE');
     assertOrderEmailInput({ email, name, orderId, amountMinor, currency });
+    if (!['cod', 'bank_transfer'].includes(paymentMethod)) throw new Error('INVALID_ORDER_EMAIL');
     if (phone !== null && (typeof phone !== 'string' || phone.length > 40 || /[\r\n]/u.test(phone))) {
       throw new Error('INVALID_ORDER_EMAIL');
     }
@@ -150,10 +155,13 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     const safePhone = phone === null ? '' : String(phone).slice(0, 40);
     const orderReference = orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
     const total = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amountMinor / 100);
+    const cashOnDelivery = paymentMethod === 'cod';
     await deliver({
       to: ownerNotice || sender,
-      subject: `New cash-on-delivery order ${orderReference}`,
-      text: `New cash-on-delivery order ${orderReference}.\nCustomer: ${safeName} (${email})${safePhone ? `\nPhone: ${safePhone}` : ''}\nTotal: ${total} — collected on delivery.\n\nSilkItElegantly`,
+      subject: cashOnDelivery ? `New cash-on-delivery order ${orderReference}` : `New bank-transfer order ${orderReference}`,
+      text: cashOnDelivery
+        ? `New cash-on-delivery order ${orderReference}.\nCustomer: ${safeName} (${email})${safePhone ? `\nPhone: ${safePhone}` : ''}\nTotal: ${total} — collected on delivery.\n\nSilkItElegantly`
+        : `New bank-transfer order ${orderReference}.\nCustomer: ${safeName} (${email})${safePhone ? `\nPhone: ${safePhone}` : ''}\nTotal: ${total} — awaiting bank transfer.\n\nSilkItElegantly`,
     });
   }
 

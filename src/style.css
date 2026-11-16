@@ -1971,6 +1971,7 @@ svg {
 }
 
 .checkout-confirm-cod,
+.checkout-confirm-transfer,
 .checkout-confirm-btn,
 .checkout-whatsapp-send,
 .checkout-shipping-submit {
@@ -1990,6 +1991,7 @@ svg {
 }
 
 .checkout-confirm-cod:hover,
+.checkout-confirm-transfer:hover:not(:disabled),
 .checkout-confirm-btn:hover:not(:disabled),
 .checkout-whatsapp-send:hover,
 .checkout-shipping-submit:hover:not(:disabled) {
@@ -1997,6 +1999,7 @@ svg {
 }
 
 .checkout-confirm-cod:disabled,
+.checkout-confirm-transfer:disabled,
 .checkout-confirm-btn:disabled,
 .checkout-shipping-submit:disabled {
   cursor: wait;

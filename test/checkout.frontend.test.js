@@ -73,6 +73,15 @@ function setup({ user }) {
           mode: 'cod',
         }) };
       }
+      if (body?.paymentMethod === 'bank_transfer') {
+        return { ok: true, status: 201, json: async () => ({
+          orderId: 'test-order-id-bt-1',
+          orderReference: 'BTORDER1',
+          amountMinor: 20500,
+          currency: 'MAD',
+          mode: 'bank_transfer',
+        }) };
+      }
       return { ok: true, status: 201, json: async () => ({
         orderId: 'test-order-id-1',
         orderReference: 'TESTORDER1',
@@ -223,30 +232,53 @@ test('guest checkout demands the delivery address and phone before confirming an
   dom.window.close();
 });
 
-test('the cash-on-delivery button appears only for Morocco and sends everyone else to WhatsApp', async () => {
+test('the cash-on-delivery button stays visible but disabled outside Morocco, and bank transfer serves everyone', async () => {
   const { dom } = setup({ user: null });
   await openCheckoutPanel();
   const codButton = document.querySelector('.checkout-confirm-cod');
+  const transferButton = document.querySelector('.checkout-confirm-transfer');
   const note = document.querySelector('[data-checkout-cod-note]');
-  // No country chosen yet: cash on delivery is not offered, with a neutral note.
-  assert.equal(codButton.hidden, true);
+  // No country chosen yet: cash on delivery is locked, with a neutral note.
+  assert.equal(codButton.disabled, true);
+  assert.equal(transferButton.disabled, false, 'bank transfer is offered before any country is chosen');
   assert.equal(note.hidden, false);
   assert.equal(note.textContent, 'Cash on delivery is only available in Morocco.');
-  // Card is not offered either while the payment account is in review.
+  // Card is not offered while the payment account is in review.
   assert.equal(document.querySelector('.checkout-pay-card'), null);
 
   const form = document.querySelector('.checkout-details-form');
   const countrySelect = form.querySelector('select[name="shippingCountry"]');
   countrySelect.value = 'FR';
   countrySelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.equal(codButton.hidden, true, 'no cash on delivery outside Morocco');
+  assert.equal(codButton.disabled, true, 'no cash on delivery outside Morocco');
+  assert.equal(transferButton.disabled, false);
   assert.equal(note.hidden, false);
   assert.match(note.textContent, /Oops — cash on delivery is only available in Morocco\. You can either pay by bank transfer or through WhatsApp\./u);
 
   countrySelect.value = 'MA';
   countrySelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.equal(codButton.hidden, false);
+  assert.equal(codButton.disabled, false);
   assert.equal(note.hidden, true);
+  dom.window.close();
+});
+
+test('the bank-transfer button confirms the order from outside Morocco and explains the next step', async () => {
+  const { dom, requests } = setup({ user: null });
+  const cart = await openCheckoutPanel();
+  const form = document.querySelector('.checkout-details-form');
+  fillGuestContact(form);
+  fillDeliveryFields(form, { city: 'Paris', postalCode: '75001', country: 'FR' });
+
+  document.querySelector('.checkout-confirm-transfer').click();
+  await waitUntil(() => !document.querySelector('.checkout-order-stage').hidden);
+  const checkoutRequest = requests.find(({ url }) => url.endsWith('/api/payments/checkout')).body;
+  assert.equal(checkoutRequest.paymentMethod, 'bank_transfer');
+  assert.deepEqual(checkoutRequest.shipping, { line1: '1 Harbour Road', line2: '', city: 'Paris', postalCode: '75001', country: 'FR' });
+  assert.equal(cart.getItems().length, 0, 'a confirmed bank-transfer order empties the cart');
+  const message = document.querySelector('[data-checkout-order-message]').textContent;
+  assert.match(message, /ref BTORDER1/u);
+  assert.match(message, /pay €205 by bank transfer/u);
+  assert.match(message, /bank details/u);
   dom.window.close();
 });
 

@@ -290,10 +290,12 @@ export function createPaymentsRouter({
       if (!isAllowedOrigin(requestOrigin(req), origins)) return res.status(403).json({ error: 'request_not_authorized' });
       if (!isJsonRequest(req)) return res.status(415).json({ error: 'json_required' });
       if (!validBodyObject(req.body) || !validBodyObject(req.body.customer)) return res.status(400).json({ error: 'invalid_checkout' });
-      // 'card' keeps the YouCan Pay flow; 'cod' records a cash-on-delivery order
-      // and needs no payment provider at all.
+      // 'card' keeps the YouCan Pay flow; 'cod' and 'bank_transfer' record
+      // orders that need no payment provider at all.
       const paymentMethod = req.body.paymentMethod === undefined ? 'card' : req.body.paymentMethod;
-      if (paymentMethod !== 'cod' && paymentMethod !== 'card') return res.status(400).json({ error: 'invalid_checkout' });
+      if (!['cod', 'bank_transfer', 'card'].includes(paymentMethod)) {
+        return res.status(400).json({ error: 'invalid_checkout' });
+      }
       if (paymentMethod === 'card' && !mode) return res.status(503).json({ error: 'payments_not_configured' });
       const name = validateName(req.body.customer.name);
       const email = normalizeEmail(req.body.customer.email);
@@ -312,8 +314,8 @@ export function createPaymentsRouter({
       catch { return res.status(400).json({ error: 'invalid_cart' }); }
 
       const orderId = crypto.randomUUID();
-      const provider = paymentMethod === 'cod' ? 'cod' : 'youcanpay';
-      const insertMode = paymentMethod === 'cod' ? 'none' : mode;
+      const provider = paymentMethod === 'card' ? 'youcanpay' : paymentMethod;
+      const insertMode = paymentMethod === 'card' ? mode : 'none';
       await pool.query(`
         INSERT INTO store_orders
           (id, status, customer_name, customer_email, customer_phone, items_json, currency, amount_minor, provider, provider_mode,
@@ -326,10 +328,10 @@ export function createPaymentsRouter({
 
       const orderReference = orderReferenceFrom(orderId);
 
-      if (paymentMethod === 'cod') {
+      if (paymentMethod !== 'card') {
         for (const notify of [
-          { send: mail?.sendOrderPlaced, input: { email, name, orderId, amountMinor: order.amountMinor, currency: order.currency } },
-          { send: mail?.notifyOrderPlaced, input: { email, name, orderId, amountMinor: order.amountMinor, currency: order.currency, phone } },
+          { send: mail?.sendOrderPlaced, input: { email, name, orderId, amountMinor: order.amountMinor, currency: order.currency, paymentMethod } },
+          { send: mail?.notifyOrderPlaced, input: { email, name, orderId, amountMinor: order.amountMinor, currency: order.currency, paymentMethod, phone } },
         ]) {
           try { await notify.send?.call(mail, notify.input); }
           catch { /* a failed email never fails the order itself */ }
@@ -339,7 +341,7 @@ export function createPaymentsRouter({
           orderReference,
           amountMinor: order.amountMinor,
           currency: order.currency,
-          mode: 'cod',
+          mode: paymentMethod,
         });
       }
 

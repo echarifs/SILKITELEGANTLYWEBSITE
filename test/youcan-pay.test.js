@@ -676,6 +676,38 @@ test('a failing order email never fails a cash-on-delivery order', async () => {
   assert.equal(response.body.mode, 'cod');
 });
 
+test('bank-transfer orders record the order from any country and need no payment keys', async () => {
+  const fake = createRoutePool();
+  const sent = [];
+  const mail = {
+    async sendOrderPlaced(input) { sent.push({ kind: 'order_placed', input }); },
+    async notifyOrderPlaced(input) { sent.push({ kind: 'owner_notice', input }); },
+  };
+  // Mismatched key pair: the card branch would answer 503 without touching the DB.
+  const response = await request(paymentsApp(fake.pool, { privateKey: 'pri_live_mismatched', publicKey, mail })).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      paymentMethod: 'bank_transfer',
+      customer: { name: 'Transfer Weaver', email: 'transfer@example.com', phone: '+33612345678' },
+      shipping: { ...CHECKOUT_SHIPPING, country: 'FR' },
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(response.status, 201);
+  assert.equal(response.body.mode, 'bank_transfer');
+  assert.equal(response.body.currency, 'MAD');
+  assert.equal(response.body.token, undefined, 'bank transfer never tokenizes a card');
+  const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
+  assert.equal(insert.params[7], 'bank_transfer', 'the order records its bank-transfer provider');
+  assert.equal(insert.params[8], 'none', 'bank-transfer orders carry no provider mode');
+  assert.deepEqual(insert.params.slice(9, 14), ['12 Silk Road', 'Riad wing', 'Casablanca', '20000', 'FR']);
+  assert.deepEqual(sent.map(({ kind }) => kind), ['order_placed', 'owner_notice']);
+  assert.equal(sent[0].input.paymentMethod, 'bank_transfer');
+  assert.equal(sent[1].input.paymentMethod, 'bank_transfer');
+  assert.equal(sent[1].input.phone, '+33612345678');
+  assert.equal(fake.attempted.some(({ sql }) => sql.startsWith('INSERT IGNORE INTO payment_mail_jobs')), false);
+});
+
 test('delivery details accept the paid order once and validate the payer email', async () => {
   const seed = createRoutePool();
   await request(paymentsApp(seed.pool)).post('/checkout')

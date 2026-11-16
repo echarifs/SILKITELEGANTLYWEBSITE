@@ -39,10 +39,10 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   // already carries a delivery address.
   let profile = null;
   let shippingCaptured = false;
-  // The confirmed cash-on-delivery order, kept so the confirmation step can
-  // still hand the details over to WhatsApp.
-  let codOrder = null;
-  let codDetails = null;
+  // The confirmed cash-on-delivery or bank-transfer order, kept so the
+  // confirmation step can still hand the details over to WhatsApp.
+  let placedOrder = null;
+  let placedDetails = null;
 
   const query = (selector) => document.querySelector(selector);
   const getStatus = () => query('.checkout-status');
@@ -178,14 +178,15 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     };
   }
 
-  // Cash on delivery only serves Morocco; international customers pay by bank
-  // transfer or WhatsApp. The button and its note follow the chosen country.
+  // Cash on delivery only serves Morocco; the option stays visible for
+  // everyone but is disabled with a note outside it, while bank transfer and
+  // WhatsApp serve everyone.
   function updateCodAvailability() {
     const countrySelect = query('.checkout-details-form select[name="shippingCountry"]');
     const country = String(countrySelect?.value || '').trim().toUpperCase();
     const codAvailable = country === 'MA';
     const codButton = query('.checkout-confirm-cod');
-    if (codButton) codButton.hidden = !codAvailable;
+    if (codButton) codButton.disabled = !codAvailable;
     const note = query('[data-checkout-cod-note]');
     if (!note) return;
     note.hidden = codAvailable;
@@ -238,8 +239,8 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     try { paymentElement?.destroy?.(); } catch { /* provider iframe cleanup is best-effort */ }
     paymentElement = null;
     checkoutSession = null;
-    codOrder = null;
-    codDetails = null;
+    placedOrder = null;
+    placedDetails = null;
     const panel = query('.checkout-panel');
     const items = query('.cart-items');
     const checkoutButton = query('.checkout-btn');
@@ -251,6 +252,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     const shippingForm = query('.checkout-shipping-form');
     const shippingSubmit = query('.checkout-shipping-submit');
     const submit = query('.checkout-confirm-cod');
+    const submitTransfer = query('.checkout-confirm-transfer');
     const confirm = query('.checkout-confirm-btn');
     const back = query('.checkout-back');
     if (panel) {
@@ -314,6 +316,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     }
     shippingCaptured = false;
     if (submit) submit.disabled = false;
+    if (submitTransfer) submitTransfer.disabled = false;
     if (confirm) {
       confirm.disabled = true;
       confirm.hidden = false;
@@ -409,30 +412,38 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     };
   }
 
-  async function confirmCodOrder(event) {
+  // One placement path for the two no-provider payment methods: cash on
+  // delivery (Morocco only) and bank transfer (everywhere).
+  async function confirmCheckout(event, paymentMethod) {
     event.preventDefault();
     if (!cart.getItems().length) {
       showToast?.('Your cart is empty');
       resetCheckout();
       return;
     }
-    // This handler is delegated from document, so currentTarget is document.
-    // Use the submitted form itself for validation and FormData construction.
-    const form = event.target;
+    // Reachable both from the form's submit (cash on delivery) and from the
+    // bank-transfer button, so always resolve the details form itself.
+    const form = event.target instanceof HTMLFormElement
+      ? event.target
+      : event.target.closest?.('.checkout-details-form') ?? query('.checkout-details-form');
     const details = validateDetails(form);
     if (!details.ok) {
       setStatus(details.message);
       details.focus?.();
       return;
     }
-    // The button is hidden outside Morocco, but Enter in a field could still submit.
-    if (details.shipping.country !== 'MA') {
+    // The pay-on-delivery button is disabled outside Morocco, but Enter in a
+    // field could still submit the form.
+    if (paymentMethod === 'cod' && details.shipping.country !== 'MA') {
       setStatus('Oops — cash on delivery is only available in Morocco. You can either pay by bank transfer or through WhatsApp.');
       return;
     }
-    const submit = query('.checkout-confirm-cod');
+    const submitCod = query('.checkout-confirm-cod');
+    const submitTransfer = query('.checkout-confirm-transfer');
+    const codEligible = details.shipping.country === 'MA';
     const generationAtStart = generation;
-    if (submit) submit.disabled = true;
+    if (submitCod) submitCod.disabled = true;
+    if (submitTransfer) submitTransfer.disabled = true;
     setStatus('Placing your order…');
     try {
       const response = await fetch('/api/payments/checkout', {
@@ -447,7 +458,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
             option: item.option,
             quantity: item.quantity,
           })),
-          paymentMethod: 'cod',
+          paymentMethod,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -458,11 +469,11 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
         throw new Error('We could not record your order. Please try again or contact us for help.');
       }
       if (generationAtStart !== generation) return;
-      if (body.mode !== 'cod' || typeof body.orderReference !== 'string') {
+      if (body.mode !== paymentMethod || typeof body.orderReference !== 'string') {
         throw new Error('The order response was incomplete. Please try again.');
       }
-      codOrder = body;
-      codDetails = details;
+      placedOrder = body;
+      placedDetails = details;
       for (const item of cart.getItems()) cart.removeItem(item.key);
       updateCartCount?.();
       renderCartItems?.();
@@ -470,8 +481,11 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       const second = details.shipping.line2 ? `, ${details.shipping.line2}` : '';
       const message = query('[data-checkout-order-message]');
       const summary = query('[data-checkout-order-summary]');
+      const total = formatCurrency(body.amountMinor / 100);
       if (message) {
-        message.textContent = `Order received — ref ${body.orderReference}. You pay ${formatCurrency(body.amountMinor / 100)} in cash when it is delivered.`;
+        message.textContent = body.mode === 'bank_transfer'
+          ? `Order received — ref ${body.orderReference}. Please pay ${total} by bank transfer; we will send you our bank details right away (WhatsApp or email).`
+          : `Order received — ref ${body.orderReference}. You pay ${total} in cash when it is delivered.`;
       }
       if (summary) {
         summary.textContent = `Order for ${details.customer.name} — delivering to: ${details.shipping.line1}${second}, ${details.shipping.city} ${details.shipping.postalCode}. We will contact you to confirm.`;
@@ -496,7 +510,8 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       }
     } catch (error) {
       if (generationAtStart !== generation) return;
-      if (submit) submit.disabled = false;
+      if (submitCod) submitCod.disabled = !codEligible;
+      if (submitTransfer) submitTransfer.disabled = false;
       setStatus(safeErrorMessage(error?.message));
     }
   }
@@ -667,12 +682,14 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   }
 
   // Confirmation-step button: replays the order that was already recorded.
-  function sendCodOrderOnWhatsApp() {
-    if (!codOrder || !codDetails) {
+  function sendPlacedOrderOnWhatsApp() {
+    if (!placedOrder || !placedDetails) {
       showToast?.('Your order details are not available right now');
       return;
     }
-    const message = `Hello SilkItElegantly, I just placed order ${codOrder.orderReference} (cash on delivery):\n\nName: ${codDetails.customer.name}\nPhone: ${codDetails.customer.phone}\nAddress: ${codDetails.shipping.line1}${codDetails.shipping.line2 ? `, ${codDetails.shipping.line2}` : ''}, ${codDetails.shipping.city} ${codDetails.shipping.postalCode}, ${codDetails.shipping.country}\nTotal: ${formatCurrency(codOrder.amountMinor / 100)}`;
+    const method = placedOrder.mode === 'bank_transfer' ? 'bank transfer' : 'cash on delivery';
+    const shipping = placedDetails.shipping;
+    const message = `Hello SilkItElegantly, I just placed order ${placedOrder.orderReference} (${method}):\n\nName: ${placedDetails.customer.name}\nPhone: ${placedDetails.customer.phone}\nAddress: ${shipping.line1}${shipping.line2 ? `, ${shipping.line2}` : ''}, ${shipping.city} ${shipping.postalCode}, ${shipping.country}\nTotal: ${formatCurrency(placedOrder.amountMinor / 100)}`;
     openWhatsApp(message);
   }
 
@@ -857,12 +874,16 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       void confirmPayment();
       return;
     }
+    if (event.target.closest('.checkout-confirm-transfer')) {
+      void confirmCheckout(event, 'bank_transfer');
+      return;
+    }
     if (event.target.closest('.checkout-whatsapp-order')) {
       checkoutByWhatsApp();
       return;
     }
     if (event.target.closest('.checkout-whatsapp-send')) {
-      sendCodOrderOnWhatsApp();
+      sendPlacedOrderOnWhatsApp();
       return;
     }
     if (event.target.closest('[data-checkout-identity-pen]')) {
@@ -882,7 +903,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   });
 
   document.addEventListener('submit', (event) => {
-    if (event.target.matches('.checkout-details-form')) void confirmCodOrder(event);
+    if (event.target.matches('.checkout-details-form')) void confirmCheckout(event, 'cod');
     else if (event.target.matches('.checkout-shipping-form')) void saveShippingDetails(event);
   });
 
