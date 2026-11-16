@@ -301,6 +301,10 @@ export function createPaymentsRouter({
       if (!name || !email || !phone) return res.status(400).json({ error: 'invalid_checkout' });
       const shipping = shippingFromBody(req.body.shipping);
       if (!shipping) return res.status(400).json({ error: 'invalid_checkout' });
+      // Cash on delivery only serves Morocco; international customers order via WhatsApp.
+      if (paymentMethod === 'cod' && shipping.country !== 'MA') {
+        return res.status(400).json({ error: 'cod_not_available' });
+      }
       if (!await checkoutRateAllowed(pool, req, email)) return res.status(429).json({ error: 'try_again_later' });
 
       let order;

@@ -12,9 +12,9 @@ const PROFILE_WITH_ADDRESS = {
   phone: '+212612345678',
   addressLine1: '12 Silk Road',
   addressLine2: 'Riad wing',
-  city: 'Nouakchott',
-  postalCode: '0000',
-  country: 'MR',
+  city: 'Casablanca',
+  postalCode: '20000',
+  country: 'MA',
 };
 
 const PROFILE_WITHOUT_ADDRESS = {
@@ -137,7 +137,7 @@ async function openCheckoutPanel() {
   return cart;
 }
 
-function fillDeliveryFields(form, { line1 = '1 Harbour Road', city = 'Paris', postalCode = '75001', country = 'FR' } = {}) {
+function fillDeliveryFields(form, { line1 = '1 Harbour Road', city = 'Casablanca', postalCode = '20000', country = 'MA' } = {}) {
   form.querySelector('input[name="shippingLine1"]').value = line1;
   form.querySelector('input[name="shippingCity"]').value = city;
   form.querySelector('input[name="shippingPostalCode"]').value = postalCode;
@@ -161,7 +161,7 @@ test('signed-in checkout shows identity and address summaries with pens, then co
   assert.equal(document.querySelector('[data-checkout-account-summary]').textContent,
     'Ordering as Amal Weaver (amal@example.invalid) · +212612345678');
   assert.equal(document.querySelector('[data-checkout-address-summary]').textContent,
-    'Delivering to: 12 Silk Road, Riad wing, Nouakchott 0000, Mauritania');
+    'Delivering to: 12 Silk Road, Riad wing, Casablanca 20000, Morocco');
   // Both summaries replace the raw fields.
   assert.equal(detailsForm.querySelector('input[name="customerName"]').closest('label').hidden, true);
   assert.equal(detailsForm.querySelector('input[name="customerEmail"]').closest('label').hidden, true);
@@ -180,7 +180,7 @@ test('signed-in checkout shows identity and address summaries with pens, then co
   const checkoutRequest = requests.find(({ url }) => url.endsWith('/api/payments/checkout')).body;
   assert.equal(checkoutRequest.paymentMethod, 'cod');
   assert.deepEqual(checkoutRequest.customer, { name: 'Amal Weaver', email: 'amal@example.invalid', phone: '+212612345678' });
-  assert.deepEqual(checkoutRequest.shipping, { line1: '12 Silk Road', line2: 'Riad wing', city: 'Nouakchott', postalCode: '0000', country: 'MR' });
+  assert.deepEqual(checkoutRequest.shipping, { line1: '12 Silk Road', line2: 'Riad wing', city: 'Casablanca', postalCode: '20000', country: 'MA' });
   assert.equal(cart.getItems().length, 0, 'a confirmed cash-on-delivery order empties the cart');
   assert.equal(detailsForm.hidden, true);
   assert.match(document.querySelector('[data-checkout-order-message]').textContent, /Order received — ref CODORDER1/u);
@@ -194,9 +194,9 @@ test('signed-in checkout shows identity and address summaries with pens, then co
   assert.deepEqual(requests.find(({ url }) => url.endsWith('/api/auth/address')).body, {
     addressLine1: '12 Silk Road',
     addressLine2: 'Riad wing',
-    city: 'Nouakchott',
-    postalCode: '0000',
-    country: 'MR',
+    city: 'Casablanca',
+    postalCode: '20000',
+    country: 'MA',
   });
   dom.window.close();
 });
@@ -218,8 +218,33 @@ test('guest checkout demands the delivery address and phone before confirming an
   const checkoutRequest = requests.find(({ url }) => url.endsWith('/api/payments/checkout')).body;
   assert.equal(checkoutRequest.paymentMethod, 'cod');
   assert.deepEqual(checkoutRequest.customer, { name: 'Guest Weaver', email: 'guest@example.invalid', phone: '+212612345678' });
-  assert.deepEqual(checkoutRequest.shipping, { line1: '1 Harbour Road', line2: '', city: 'Paris', postalCode: '75001', country: 'FR' });
+  assert.deepEqual(checkoutRequest.shipping, { line1: '1 Harbour Road', line2: '', city: 'Casablanca', postalCode: '20000', country: 'MA' });
   assert.equal(cart.getItems().length, 0);
+  dom.window.close();
+});
+
+test('the cash-on-delivery button appears only for Morocco and sends everyone else to WhatsApp', async () => {
+  const { dom } = setup({ user: null });
+  await openCheckoutPanel();
+  const codButton = document.querySelector('.checkout-confirm-cod');
+  const note = document.querySelector('[data-checkout-cod-note]');
+  // No country chosen yet: cash on delivery is not offered.
+  assert.equal(codButton.hidden, true);
+  assert.equal(note.hidden, false);
+  // Card is not offered either while the payment account is in review.
+  assert.equal(document.querySelector('.checkout-pay-card'), null);
+
+  const form = document.querySelector('.checkout-details-form');
+  const countrySelect = form.querySelector('select[name="shippingCountry"]');
+  countrySelect.value = 'FR';
+  countrySelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal(codButton.hidden, true, 'no cash on delivery outside Morocco');
+  assert.equal(note.hidden, false);
+
+  countrySelect.value = 'MA';
+  countrySelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal(codButton.hidden, false);
+  assert.equal(note.hidden, true);
   dom.window.close();
 });
 
@@ -232,7 +257,7 @@ test('a missing phone number is refused in the checkout, then accepted once adde
   assert.equal(document.querySelector('[data-checkout-account-summary]').textContent,
     'Ordering as Amal Weaver (amal@example.invalid)');
   assert.equal(form.querySelector('.checkout-phone-field').hidden, false);
-  fillDeliveryFields(form, { city: 'Nouakchott', postalCode: '0000', country: 'MR', line1: '9 Oasis Lane' });
+  fillDeliveryFields(form, { line1: '9 Oasis Lane' });
 
   submit(form, dom);
   assert.match(document.querySelector('.checkout-status').textContent, /enter your phone number/u);
@@ -252,7 +277,7 @@ test('the WhatsApp order button sends the cart plus the required contact details
   await openCheckoutPanel();
   const form = document.querySelector('.checkout-details-form');
   fillGuestContact(form);
-  fillDeliveryFields(form);
+  fillDeliveryFields(form, { city: 'Paris', postalCode: '75001', country: 'FR' });
 
   let opened;
   dom.window.open = (url) => { opened = url; };
@@ -280,29 +305,6 @@ test('the cart footer WhatsApp button now opens the checkout panel so details ar
   assert.equal(document.querySelector('.checkout-panel').hidden, false);
   assert.equal(document.querySelector('.cart-items').hidden, true);
   assert.equal(document.querySelector('.checkout-btn').hidden, true);
-  dom.window.close();
-});
-
-test('paying by card captures the delivery address at creation and skips the post-payment step', async () => {
-  const { dom, requests } = setup({ user: PROFILE_WITHOUT_ADDRESS });
-  await openCheckoutPanel();
-  await waitUntil(() => document.querySelector('[data-checkout-identity]').hidden === false);
-  const form = document.querySelector('.checkout-details-form');
-  // No saved address, so there is no address summary to hide the fields.
-  assert.equal(document.querySelector('[data-checkout-address]').hidden, true);
-  fillDeliveryFields(form, { city: 'Nouakchott', postalCode: '0000', country: 'MR', line1: '9 Oasis Lane' });
-
-  document.querySelector('.checkout-pay-card').click();
-  await waitUntil(() => !document.querySelector('.checkout-payment-stage').hidden);
-  await waitUntil(() => !document.querySelector('.checkout-confirm-btn').disabled);
-  const checkoutRequest = requests.find(({ url }) => url.endsWith('/api/payments/checkout')).body;
-  assert.equal(checkoutRequest.paymentMethod, 'card');
-  assert.deepEqual(checkoutRequest.shipping, { line1: '9 Oasis Lane', line2: '', city: 'Nouakchott', postalCode: '0000', country: 'MR' });
-  assert.deepEqual(checkoutRequest.customer.phone, '+212612345678');
-
-  document.querySelector('.checkout-confirm-btn').click();
-  await waitUntil(() => document.querySelector('.checkout-status').textContent.includes('Payment confirmed for order TESTORDER1'));
-  assert.equal(document.querySelector('.checkout-shipping-stage').hidden, true);
   dom.window.close();
 });
 

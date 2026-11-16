@@ -2005,8 +2005,19 @@ svg {
 
 .checkout-alt-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
+}
+
+.checkout-cod-note {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(180, 127, 146, 0.28);
+  border-radius: 12px;
+  background: rgba(255, 182, 193, 0.28);
+  color: var(--ink);
+  font-size: 0.8rem;
+  line-height: 1.55;
 }
 
 .checkout-pay-card,

@@ -519,7 +519,7 @@ function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, l
   return app;
 }
 
-const CHECKOUT_SHIPPING = { line1: '12 Silk Road', line2: 'Riad wing', city: 'Nouakchott', postalCode: '0000', country: 'MR' };
+const CHECKOUT_SHIPPING = { line1: '12 Silk Road', line2: 'Riad wing', city: 'Casablanca', postalCode: '20000', country: 'MA' };
 
 test('checkout requires the delivery address and returns a card session', async () => {
   const fake = createRoutePool();
@@ -539,7 +539,35 @@ test('checkout requires the delivery address and returns a card session', async 
   assert.equal(insert.params[3], '+212612345678');
   assert.equal(insert.params[7], 'youcanpay', 'card orders record the payment provider');
   assert.equal(insert.params[8], 'sandbox', 'provider mode is stored with the order');
-  assert.deepEqual(insert.params.slice(9, 14), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR']);
+  assert.deepEqual(insert.params.slice(9, 14), ['12 Silk Road', 'Riad wing', 'Casablanca', '20000', 'MA']);
+});
+
+test('cash on delivery is refused outside Morocco while card orders are accepted anywhere', async () => {
+  const codFake = createRoutePool();
+  const codResponse = await request(paymentsApp(codFake.pool, { privateKey: 'pri_live_mismatched', publicKey })).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      paymentMethod: 'cod',
+      customer: { name: 'Cash Weaver', email: 'cash@example.com', phone: '+212612345678' },
+      shipping: { ...CHECKOUT_SHIPPING, country: 'FR' },
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(codResponse.status, 400);
+  assert.equal(codResponse.body.error, 'cod_not_available');
+  assert.equal(codFake.attempted.some(({ sql }) => sql.startsWith('INSERT INTO store_orders')), false);
+
+  const cardFake = createRoutePool();
+  const cardResponse = await request(paymentsApp(cardFake.pool)).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      customer: { name: 'Card Weaver', email: 'card@example.com', phone: '+212612345678' },
+      shipping: { ...CHECKOUT_SHIPPING, country: 'FR' },
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(cardResponse.status, 201);
+  assert.equal(cardResponse.body.mode, 'sandbox');
 });
 
 test('checkout with live keys charges live and stores provider_mode = live', async () => {
@@ -622,7 +650,7 @@ test('cash-on-delivery orders skip the payment provider entirely and mail custom
   const insert = fake.attempted.find(({ sql }) => sql.startsWith('INSERT INTO store_orders'));
   assert.equal(insert.params[7], 'cod', 'the order records its cod provider');
   assert.equal(insert.params[8], 'none', 'cod orders carry no provider mode');
-  assert.deepEqual(insert.params.slice(9, 14), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR']);
+  assert.deepEqual(insert.params.slice(9, 14), ['12 Silk Road', 'Riad wing', 'Casablanca', '20000', 'MA']);
   assert.deepEqual(sent.map(({ kind }) => kind), ['order_placed', 'owner_notice']);
   assert.deepEqual(sent.map(({ input }) => input.orderId), [response.body.orderId, response.body.orderId]);
   assert.equal(sent[1].input.phone, '+212612345678');
@@ -696,7 +724,7 @@ test('delivery details accept the paid order once and validate the payer email',
   assert.deepEqual(first.body, { saved: true });
   const update = attempted.find(({ sql }) => sql.startsWith('UPDATE store_orders SET shipping_line1'));
   assert.ok(update, 'shipping update ran');
-  assert.deepEqual(update.params.slice(0, 6), ['12 Silk Road', 'Riad wing', 'Nouakchott', '0000', 'MR', '+212612345678']);
+  assert.deepEqual(update.params.slice(0, 6), ['12 Silk Road', 'Riad wing', 'Casablanca', '20000', 'MA', '+212612345678']);
 
   const second = await route()
     .send({ orderId: seededOrder.id, email: 'guest@example.com', ...CHECKOUT_SHIPPING });

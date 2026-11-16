@@ -160,6 +160,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
         if (cityOwned && !line2Owned) owned(form, 'input[name="shippingLine2"]', '');
       }
     }
+    updateCodAvailability();
   }
 
   function profileAddress() {
@@ -175,6 +176,17 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       postalCode,
       country,
     };
+  }
+
+  // Cash on delivery only serves Morocco; international customers order via
+  // WhatsApp instead. The button and its note follow the chosen country.
+  function updateCodAvailability() {
+    const countrySelect = query('.checkout-details-form select[name="shippingCountry"]');
+    const codAvailable = String(countrySelect?.value || '').trim().toUpperCase() === 'MA';
+    const codButton = query('.checkout-confirm-cod');
+    if (codButton) codButton.hidden = !codAvailable;
+    const note = query('[data-checkout-cod-note]');
+    if (note) note.hidden = codAvailable;
   }
 
   function countryName(iso2) {
@@ -305,6 +317,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       back.hidden = false;
       back.textContent = 'Back to cart';
     }
+    updateCodAvailability();
     setStatus('');
   }
 
@@ -333,6 +346,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     if (!profile) loadProfile();
     ensureCheckoutSelects();
     prefillCheckoutForm();
+    updateCodAvailability();
     const nameField = query('input[name="customerName"]');
     // A guest types their details; a signed-in customer jumps straight to the button.
     if (nameField && nameField.closest('label')?.hidden) query('.checkout-confirm-cod')?.focus();
@@ -406,6 +420,11 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       details.focus?.();
       return;
     }
+    // The button is hidden outside Morocco, but Enter in a field could still submit.
+    if (details.shipping.country !== 'MA') {
+      setStatus('Cash on delivery is only available in Morocco. Send your order on WhatsApp and we will arrange payment together.');
+      return;
+    }
     const submit = query('.checkout-confirm-cod');
     const generationAtStart = generation;
     if (submit) submit.disabled = true;
@@ -429,6 +448,7 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (body.error === 'try_again_later') throw new Error('Too many checkout attempts. Please wait a few minutes and try again.');
+        if (body.error === 'cod_not_available') throw new Error('Cash on delivery is only available in Morocco — send your order on WhatsApp instead.');
         if (body.error === 'invalid_cart' || body.error === 'invalid_checkout') throw new Error('Please check your cart and contact details, then try again.');
         throw new Error('We could not record your order. Please try again or contact us for help.');
       }
@@ -832,10 +852,6 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       void confirmPayment();
       return;
     }
-    if (event.target.closest('.checkout-pay-card')) {
-      void startCardPayment();
-      return;
-    }
     if (event.target.closest('.checkout-whatsapp-order')) {
       checkoutByWhatsApp();
       return;
@@ -863,6 +879,10 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   document.addEventListener('submit', (event) => {
     if (event.target.matches('.checkout-details-form')) void confirmCodOrder(event);
     else if (event.target.matches('.checkout-shipping-form')) void saveShippingDetails(event);
+  });
+
+  document.addEventListener('change', (event) => {
+    if (event.target.matches('.checkout-details-form select[name="shippingCountry"]')) updateCodAvailability();
   });
 
   return resetCheckout;
