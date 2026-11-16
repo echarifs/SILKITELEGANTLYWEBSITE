@@ -38,7 +38,6 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   // Signed-in profile snapshot (null for guests) and whether the paid order
   // already carries a delivery address.
   let profile = null;
-  let profileRequested = false;
   let shippingCaptured = false;
   // The confirmed cash-on-delivery order, kept so the confirmation step can
   // still hand the details over to WhatsApp.
@@ -69,7 +68,6 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
   // Signed-in customers skip typing their details entirely: the order is built
   // from their profile behind the scenes and a summary line replaces the fields.
   function loadProfile() {
-    profileRequested = true;
     fetch('/api/auth/me', { credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store' })
       .then((response) => (response.ok ? response.json() : null))
       .then((body) => {
@@ -322,7 +320,9 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     if (items) items.hidden = true;
     if (checkoutButton) checkoutButton.hidden = true;
     if (whatsappButton) whatsappButton.hidden = true;
-    if (!profileRequested) loadProfile();
+    // Ask again whenever the profile is unknown: a customer may sign in after
+    // this page loaded, so a missing profile is never treated as permanent.
+    if (!profile) loadProfile();
     ensureCheckoutSelects();
     prefillCheckoutForm();
     const nameField = query('input[name="customerName"]');

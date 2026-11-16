@@ -56,12 +56,13 @@ function setup({ user }) {
   globalThis.HTMLSelectElement = dom.window.HTMLSelectElement;
   document.body.innerHTML = CART_MARKUP;
   const requests = [];
+  const state = { user };
   globalThis.fetch = async (url, options = {}) => {
     const path = String(url);
     const body = options.body ? JSON.parse(options.body) : null;
     requests.push({ url: path, body });
     if (path.endsWith('/api/auth/csrf')) return { ok: true, status: 200, json: async () => ({ csrfToken: 'c'.repeat(64) }) };
-    if (path.endsWith('/api/auth/me')) return { ok: Boolean(user), status: user ? 200 : 401, json: async () => ({ user }) };
+    if (path.endsWith('/api/auth/me')) return { ok: Boolean(state.user), status: state.user ? 200 : 401, json: async () => ({ user: state.user }) };
     if (path.endsWith('/api/payments/checkout')) {
       if (body?.paymentMethod === 'cod') {
         return { ok: true, status: 201, json: async () => ({
@@ -95,7 +96,7 @@ function setup({ user }) {
       confirm: async () => ({ status: 'succeeded' }),
     }),
   });
-  return { dom, requests };
+  return { dom, requests, signIn: (nextUser) => { state.user = nextUser; } };
 }
 
 function makeCart() {
@@ -290,6 +291,24 @@ test('paying by card captures the delivery address at creation and skips the pos
   document.querySelector('.checkout-confirm-btn').click();
   await waitUntil(() => document.querySelector('.checkout-status').textContent.includes('Payment confirmed for order TESTORDER1'));
   assert.equal(document.querySelector('.checkout-shipping-stage').hidden, true);
+  dom.window.close();
+});
+
+test('the checkout re-checks the profile on every open, so signing in between visits shows the summaries', async () => {
+  const { dom, signIn } = setup({ user: null });
+  // First visit happens while the customer is still a guest.
+  await openCheckoutPanel();
+  assert.equal(document.querySelector('[data-checkout-identity]').hidden, true);
+  document.querySelector('.checkout-back').click();
+  await waitUntil(() => document.querySelector('.checkout-panel').hidden);
+
+  // They sign in on their account page, then come back to the checkout.
+  signIn(PROFILE_WITH_ADDRESS);
+  document.querySelector('.checkout-btn').click();
+  await waitUntil(() => document.querySelector('[data-checkout-identity]').hidden === false);
+  assert.equal(document.querySelector('[data-checkout-address]').hidden, false);
+  assert.equal(document.querySelector('[data-checkout-account-summary]').textContent,
+    'Ordering as Amal Weaver (amal@example.invalid) · +212612345678');
   dom.window.close();
 });
 
