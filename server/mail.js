@@ -137,7 +137,7 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     const total = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amountMinor / 100);
     const paymentLine = paymentMethod === 'cod'
       ? 'You pay in cash when it is delivered. We will contact you to confirm the delivery.'
-      : 'You pay by bank transfer; we will send you our bank details right away. We ship as soon as the transfer arrives.';
+      : 'You pay by bank transfer using these bank details:\nBank: Attijariwafa Bank\nName on account: Safia Echarif\nRIB: 00076500000725804003110829\nWe ship as soon as the transfer arrives.';
     await deliver({
       to: email,
       subject: `Order ${orderReference} received`,

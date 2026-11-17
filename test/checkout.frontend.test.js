@@ -195,6 +195,7 @@ test('signed-in checkout shows identity and address summaries with pens, then co
   assert.equal(document.querySelector('[data-checkout-order-message]').textContent, 'Thank you for your order!');
   const coming = document.querySelector('[data-checkout-order-coming]').textContent;
   assert.match(coming, /Your order is coming your way — you pay €205 in cash/u);
+  assert.equal(document.querySelector('[data-checkout-bank-details]').hidden, true, 'cash orders never show the bank details');
   assert.equal(document.querySelector('[data-checkout-order-reference]').textContent, '#SE-1A2B3C4D');
   assert.match(document.querySelector('[data-checkout-order-summary]').textContent, /delivering to: 12 Silk Road/u);
   assert.equal(document.querySelector('.checkout-back').textContent, 'Return to cart');
@@ -286,8 +287,12 @@ test('the bank-transfer button confirms the order from outside Morocco and expla
   assert.equal(document.querySelector('[data-checkout-order-message]').textContent, 'Thank you for your order!');
   const coming = document.querySelector('[data-checkout-order-coming]').textContent;
   assert.match(coming, /Your order is coming your way once your bank transfer arrives/u);
-  assert.match(coming, /Please pay €205 by bank transfer/u);
-  assert.match(coming, /bank details/u);
+  assert.match(coming, /Please pay €205 using the bank details below/u);
+  const bankDetails = document.querySelector('[data-checkout-bank-details]');
+  assert.equal(bankDetails.hidden, false, 'bank-transfer orders show the bank details on the confirmation');
+  assert.match(bankDetails.textContent, /Attijariwafa Bank/u);
+  assert.match(bankDetails.textContent, /Safia Echarif/u);
+  assert.match(bankDetails.textContent, /RIB 00076500000725804003110829/u);
   assert.equal(document.querySelector('[data-checkout-order-reference]').textContent, '#SE-9F8E7D6C');
   dom.window.close();
 });

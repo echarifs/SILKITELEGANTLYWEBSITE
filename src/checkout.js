@@ -304,11 +304,13 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       orderStage.hidden = true;
       const message = orderStage.querySelector('[data-checkout-order-message]');
       const coming = orderStage.querySelector('[data-checkout-order-coming]');
+      const bankDetails = orderStage.querySelector('[data-checkout-bank-details]');
       const reference = orderStage.querySelector('[data-checkout-order-reference]');
       const summary = orderStage.querySelector('[data-checkout-order-summary]');
       const logo = orderStage.querySelector('[data-checkout-order-logo]');
       if (message) message.textContent = '';
       if (coming) coming.textContent = '';
+      if (bankDetails) bankDetails.hidden = true;
       if (reference) reference.textContent = '';
       if (summary) summary.textContent = '';
       if (logo) logo.hidden = true;
@@ -493,9 +495,11 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       if (message) message.textContent = 'Thank you for your order!';
       if (coming) {
         coming.textContent = body.mode === 'bank_transfer'
-          ? `Your order is coming your way once your bank transfer arrives. Please pay ${total} by bank transfer; we will send you our bank details right away (WhatsApp or email).`
+          ? `Your order is coming your way once your bank transfer arrives. Please pay ${total} using the bank details below.`
           : `Your order is coming your way — you pay ${total} in cash when it is delivered.`;
       }
+      const bankDetails = query('[data-checkout-bank-details]');
+      if (bankDetails) bankDetails.hidden = body.mode !== 'bank_transfer';
       const reference = query('[data-checkout-order-reference]');
       if (reference) reference.textContent = `#${body.orderReference}`;
       query('[data-checkout-order-logo]')?.removeAttribute('hidden');
