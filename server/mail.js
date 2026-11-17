@@ -140,7 +140,7 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     await deliver({
       to: email,
       subject: `Order ${orderReference} received`,
-      text: `Hello ${safeName},\n\nWe received your order ${orderReference}.\nTotal: ${total}\n${paymentLine}\n\nSilkItElegantly`,
+      text: `Hello ${safeName},\n\nThank you for your order! We received your order ${orderReference}.\nTotal: ${total}\n${paymentLine}\n\nSilkItElegantly`,
     });
   }
 

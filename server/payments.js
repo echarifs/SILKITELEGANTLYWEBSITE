@@ -264,6 +264,38 @@ export function resolvePaymentsMode(livePrivateKey, livePublicKey, sandboxPrivat
   return null;
 }
 
+const orderReferenceFrom = (orderId) => String(orderId).replace(/-/gu, '').slice(0, 10).toUpperCase();
+
+/** Re-mirror one stored order into the owner's spreadsheet after its status changed. */
+export async function syncOrderSheetFromRow(pool, orderSheets, orderId) {
+  if (!orderSheets || typeof orderSheets.syncOrder !== 'function') return;
+  const [rows] = await pool.query('SELECT * FROM store_orders WHERE id = ? LIMIT 1', [orderId]);
+  const row = rows[0];
+  if (!row) return;
+  let lines = [];
+  try { lines = JSON.parse(String(row.items_json || '[]')); } catch { lines = []; }
+  await orderSheets.syncOrder({
+    id: String(row.id),
+    reference: orderReferenceFrom(row.id),
+    createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+    paymentMethod: String(row.provider || ''),
+    status: String(row.status || ''),
+    name: row.customer_name,
+    email: row.customer_email,
+    phone: row.customer_phone,
+    lines,
+    currency: row.currency,
+    amountMinor: Number(row.amount_minor),
+    shipping: row.shipping_line1 ? {
+      line1: row.shipping_line1,
+      line2: row.shipping_line2,
+      city: row.shipping_city,
+      postalCode: row.shipping_postal_code,
+      country: row.shipping_country,
+    } : null,
+  });
+}
+
 export function createPaymentsRouter({
   pool,
   allowedOrigins = new Set(),
@@ -272,6 +304,7 @@ export function createPaymentsRouter({
   livePrivateKey = process.env.YOUCANPAY_PRIVATE_KEY,
   livePublicKey = process.env.YOUCANPAY_PUBLIC_KEY,
   mail = null,
+  orderSheets = null,
   fetchImpl = globalThis.fetch,
 } = {}) {
   if (!pool || typeof pool.query !== 'function' || typeof pool.getConnection !== 'function') throw new TypeError('pool is required');
@@ -282,8 +315,6 @@ export function createPaymentsRouter({
   const activePublicKey = mode === 'live' ? livePublicKey : publicKey;
   router.use((_req, res, next) => { setSecurityHeaders(res); next(); });
   router.use(express.json({ limit: MAX_JSON_BYTES, type: 'application/json' }));
-
-  const orderReferenceFrom = (orderId) => orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
 
   router.post('/checkout', async (req, res, next) => {
     try {
@@ -328,6 +359,25 @@ export function createPaymentsRouter({
       ]);
 
       const orderReference = orderReferenceFrom(orderId);
+
+      // Mirror the placed order into the owner's spreadsheet; a failed sync
+      // never fails the order itself.
+      try {
+        await orderSheets?.syncOrder({
+          id: orderId,
+          reference: orderReference,
+          createdAt: new Date(),
+          paymentMethod,
+          status: 'pending_payment',
+          name,
+          email,
+          phone,
+          lines: order.lines,
+          currency: order.currency,
+          amountMinor: order.amountMinor,
+          shipping,
+        });
+      } catch { /* the order stands on its own without the spreadsheet */ }
 
       if (paymentMethod !== 'card') {
         for (const notify of [
@@ -522,6 +572,7 @@ export async function applyProviderEvent(pool, event) {
 
 export function createYouCanPayWebhookHandler({
   pool,
+  orderSheets = null,
   privateKey = process.env.YOUCANPAY_SANDBOX_PRIVATE_KEY,
   publicKey = process.env.YOUCANPAY_SANDBOX_PUBLIC_KEY,
   livePrivateKey = process.env.YOUCANPAY_PRIVATE_KEY,
@@ -541,7 +592,13 @@ export function createYouCanPayWebhookHandler({
     catch { return res.status(400).json({ error: 'invalid_webhook' }); }
     if (!validProviderEvent(event)) return res.status(204).end();
     try {
-      await applyProviderEvent(pool, event);
+      const result = await applyProviderEvent(pool, event);
+      // A processed paid/refund event refreshes the order's row in the owner's
+      // spreadsheet in the background.
+      const orderId = event.payload?.transaction?.order_id;
+      if (result === 'processed' && typeof orderId === 'string' && UUID_RE.test(orderId)) {
+        syncOrderSheetFromRow(pool, orderSheets, orderId).catch(() => { /* the spreadsheet stays as-is on failure */ });
+      }
       return res.status(200).json({ received: true });
     } catch {
       return res.status(500).json({ error: 'webhook_processing_failed' });

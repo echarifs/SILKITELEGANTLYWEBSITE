@@ -485,8 +485,8 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       const total = formatCurrency(body.amountMinor / 100);
       if (message) {
         message.textContent = body.mode === 'bank_transfer'
-          ? `Order received — ref ${body.orderReference}. Please pay ${total} by bank transfer; we will send you our bank details right away (WhatsApp or email).`
-          : `Order received — ref ${body.orderReference}. You pay ${total} in cash when it is delivered.`;
+          ? `Thank you for your order! Ref ${body.orderReference}. Please pay ${total} by bank transfer; we will send you our bank details right away (WhatsApp or email).`
+          : `Thank you for your order! Ref ${body.orderReference}. You pay ${total} in cash when it is delivered.`;
       }
       if (summary) {
         summary.textContent = `Order for ${details.customer.name} — delivering to: ${details.shipping.line1}${second}, ${details.shipping.city} ${details.shipping.postalCode}. We will contact you to confirm.`;

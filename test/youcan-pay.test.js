@@ -501,7 +501,7 @@ function createRoutePool({ orderRows = [] } = {}) {
   return { pool, orders, attempted };
 }
 
-function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, livePrivateKey: routeLivePrivate, livePublicKey: routeLivePublic, mail: routeMail } = {}) {
+function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, livePrivateKey: routeLivePrivate, livePublicKey: routeLivePublic, mail: routeMail, orderSheets: routeOrderSheets } = {}) {
   const app = express();
   app.use(createPaymentsRouter({
     pool,
@@ -511,6 +511,7 @@ function paymentsApp(pool, { privateKey: routePrivate, publicKey: routePublic, l
     livePrivateKey: routeLivePrivate,
     livePublicKey: routeLivePublic,
     mail: routeMail,
+    orderSheets: routeOrderSheets,
     fetchImpl: async (url) => ({
       ok: true,
       json: async () => ({ token: url === YOUCANPAY_LIVE_TOKENIZE_URL ? 'route_live_token_123' : 'route_token_123', transaction_id: 'cfdf4b2e-93f2-4f0f-8b7a-5f2d1a0c9e8b' }),
@@ -668,6 +669,53 @@ test('cash-on-delivery orders skip the payment provider entirely and mail custom
   assert.deepEqual(sent.map(({ input }) => input.orderId), [response.body.orderId, response.body.orderId]);
   assert.equal(sent[1].input.phone, '+212612345678');
   assert.equal(fake.attempted.some(({ sql }) => sql.startsWith('INSERT IGNORE INTO payment_mail_jobs')), false, 'cod stays out of the card payment mail queue');
+});
+
+test('a placed order is mirrored into the owner spreadsheet with its delivery info', async () => {
+  const fake = createRoutePool();
+  const mirrored = [];
+  const orderSheets = { async syncOrder(order) { mirrored.push(order); } };
+  const response = await request(paymentsApp(fake.pool, { privateKey: 'pri_live_mismatched', publicKey, orderSheets })).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      paymentMethod: 'cod',
+      customer: { name: 'Cash Weaver', email: 'cash@example.com', phone: '+212612345678' },
+      shipping: CHECKOUT_SHIPPING,
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(response.status, 201);
+  assert.equal(mirrored.length, 1);
+  const order = mirrored[0];
+  assert.equal(order.id, response.body.orderId);
+  assert.equal(order.reference, response.body.orderReference);
+  assert.equal(order.paymentMethod, 'cod');
+  assert.equal(order.status, 'pending_payment');
+  assert.equal(order.name, 'Cash Weaver');
+  assert.equal(order.phone, '+212612345678');
+  assert.deepEqual(order.shipping, CHECKOUT_SHIPPING);
+  assert.equal(order.currency, 'MAD');
+  assert.equal(order.amountMinor, 93500);
+  assert.deepEqual(order.lines.map(({ productName, option, quantity }) => ({ productName, option, quantity })),
+    [{ productName: 'Mauve Mist', option: 'Small', quantity: 1 }]);
+  assert.ok(order.createdAt instanceof Date);
+});
+
+test('a spreadsheet outage never fails a placed order', async () => {
+  const fake = createRoutePool();
+  const orderSheets = { async syncOrder() { throw new Error('ORDER_SYNC_FAILED'); } };
+  const mail = { async sendOrderPlaced() {}, async notifyOrderPlaced() {} };
+  const response = await request(paymentsApp(fake.pool, { privateKey: 'pri_live_mismatched', publicKey, mail, orderSheets })).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      paymentMethod: 'cod',
+      customer: { name: 'Cash Weaver', email: 'cash@example.com', phone: '+212612345678' },
+      shipping: CHECKOUT_SHIPPING,
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(response.status, 201);
+  assert.equal(response.body.mode, 'cod');
 });
 
 test('a failing order email never fails a cash-on-delivery order', async () => {

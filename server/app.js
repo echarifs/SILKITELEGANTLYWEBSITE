@@ -40,7 +40,7 @@ export function resolvePublicAppOrigin({ development = process.argv.includes('--
   return null;
 }
 
-export async function createApp({ pool, mail, sheets, allowedOrigins = accountOrigins(), publicOrigin } = {}) {
+export async function createApp({ pool, mail, sheets, orderSheets, allowedOrigins = accountOrigins(), publicOrigin } = {}) {
   const resolvedPublicOrigin = publicOrigin === undefined ? resolvePublicAppOrigin({ allowedOrigins }) : publicOrigin;
   const app = express();
   app.disable('x-powered-by');
@@ -70,8 +70,8 @@ export async function createApp({ pool, mail, sheets, allowedOrigins = accountOr
       },
     },
   }));
-  app.post('/api/webhooks/youcan-pay', express.raw({ type: 'application/json', limit: '64kb' }), createYouCanPayWebhookHandler({ pool }));
-  app.use('/api/payments', createPaymentsRouter({ pool, allowedOrigins, mail }));
+  app.post('/api/webhooks/youcan-pay', express.raw({ type: 'application/json', limit: '64kb' }), createYouCanPayWebhookHandler({ pool, orderSheets }));
+  app.use('/api/payments', createPaymentsRouter({ pool, allowedOrigins, mail, orderSheets }));
   app.use('/api/auth', await createAuthRouter({ pool, mail, sheets, allowedOrigins, publicOrigin: resolvedPublicOrigin }));
   app.get('/health', async (req, res) => {
     try {

@@ -5,6 +5,7 @@ import { createApp, accountOrigins } from './app.js';
 import { createPool } from './db.js';
 import { createMailService } from './mail.js';
 import { createSheetsService } from './sheets.js';
+import { createOrderSheetsService } from './order-sheets.js';
 import { startAccountWorkers } from './workers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,6 +14,7 @@ const pool = createPool();
 const allowedOrigins = accountOrigins();
 const mail = createMailService({ allowedOrigins });
 const sheets = createSheetsService({ pool });
+const orderSheets = createOrderSheetsService({ pool });
 let vite;
 let server;
 let stopWorkers;
@@ -25,10 +27,11 @@ try {
   await pool.query('SELECT id FROM payment_mail_jobs LIMIT 1');
   await pool.query('SELECT address_line1 FROM customers LIMIT 1');
   await pool.query('SELECT shipping_line1 FROM store_orders LIMIT 1');
-  const [emailResult, sheetResult] = await Promise.all([mail.verifyConnection(), sheets.verifyConnection()]);
+  const [emailResult, sheetResult, orderSheetResult] = await Promise.all([mail.verifyConnection(), sheets.verifyConnection(), orderSheets.verifyConnection()]);
   console.log('Email service:', emailResult.ok ? 'connected' : emailResult.code);
   console.log('Customer sheet:', sheetResult.ok ? 'connected and restricted' : sheetResult.code);
-  const app = await createApp({ pool, mail, sheets, allowedOrigins });
+  console.log('Order sheet:', orderSheetResult.ok ? 'connected and restricted' : orderSheetResult.code);
+  const app = await createApp({ pool, mail, sheets, orderSheets, allowedOrigins });
   if (development) {
     const { createServer } = await import('vite');
     vite = await createServer({ root, server: { middlewareMode: true, host: '0.0.0.0' }, appType: 'spa' });
