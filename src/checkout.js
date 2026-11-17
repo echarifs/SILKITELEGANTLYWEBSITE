@@ -178,21 +178,22 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     };
   }
 
-  // Cash on delivery only serves Morocco; the option stays visible for
-  // everyone but is disabled with a note outside it, while bank transfer and
-  // WhatsApp serve everyone.
+  // Cash on delivery only serves Morocco and Western Sahara; the option stays
+  // visible for everyone but is disabled with a note outside those, while
+  // bank transfer and WhatsApp serve everyone.
+  const COD_COUNTRIES = new Set(['MA', 'EH']);
   function updateCodAvailability() {
     const countrySelect = query('.checkout-details-form select[name="shippingCountry"]');
     const country = String(countrySelect?.value || '').trim().toUpperCase();
-    const codAvailable = country === 'MA';
+    const codAvailable = COD_COUNTRIES.has(country);
     const codButton = query('.checkout-confirm-cod');
     if (codButton) codButton.disabled = !codAvailable;
     const note = query('[data-checkout-cod-note]');
     if (!note) return;
     note.hidden = codAvailable;
     note.textContent = country
-      ? 'Oops — cash on delivery is only available in Morocco. You can either pay by bank transfer or through WhatsApp.'
-      : 'Cash on delivery is only available in Morocco.';
+      ? 'Oops — cash on delivery is only available in Morocco and Western Sahara. You can either pay by bank transfer or through WhatsApp.'
+      : 'Cash on delivery is only available in Morocco and Western Sahara.';
   }
 
   function countryName(iso2) {
@@ -432,15 +433,15 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       details.focus?.();
       return;
     }
-    // The pay-on-delivery button is disabled outside Morocco, but Enter in a
-    // field could still submit the form.
-    if (paymentMethod === 'cod' && details.shipping.country !== 'MA') {
-      setStatus('Oops — cash on delivery is only available in Morocco. You can either pay by bank transfer or through WhatsApp.');
+    // The pay-on-delivery button is disabled outside Morocco and Western
+    // Sahara, but Enter in a field could still submit the form.
+    if (paymentMethod === 'cod' && !COD_COUNTRIES.has(details.shipping.country)) {
+      setStatus('Oops — cash on delivery is only available in Morocco and Western Sahara. You can either pay by bank transfer or through WhatsApp.');
       return;
     }
     const submitCod = query('.checkout-confirm-cod');
     const submitTransfer = query('.checkout-confirm-transfer');
-    const codEligible = details.shipping.country === 'MA';
+    const codEligible = COD_COUNTRIES.has(details.shipping.country);
     const generationAtStart = generation;
     if (submitCod) submitCod.disabled = true;
     if (submitTransfer) submitTransfer.disabled = true;

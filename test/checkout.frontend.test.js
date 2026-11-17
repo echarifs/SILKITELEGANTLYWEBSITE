@@ -232,7 +232,7 @@ test('guest checkout demands the delivery address and phone before confirming an
   dom.window.close();
 });
 
-test('the cash-on-delivery button stays visible but disabled outside Morocco, and bank transfer serves everyone', async () => {
+test('the cash-on-delivery button stays visible but disabled outside Morocco and Western Sahara, and bank transfer serves everyone', async () => {
   const { dom } = setup({ user: null });
   await openCheckoutPanel();
   const codButton = document.querySelector('.checkout-confirm-cod');
@@ -242,7 +242,7 @@ test('the cash-on-delivery button stays visible but disabled outside Morocco, an
   assert.equal(codButton.disabled, true);
   assert.equal(transferButton.disabled, false, 'bank transfer is offered before any country is chosen');
   assert.equal(note.hidden, false);
-  assert.equal(note.textContent, 'Cash on delivery is only available in Morocco.');
+  assert.equal(note.textContent, 'Cash on delivery is only available in Morocco and Western Sahara.');
   // Card is not offered while the payment account is in review.
   assert.equal(document.querySelector('.checkout-pay-card'), null);
 
@@ -253,11 +253,16 @@ test('the cash-on-delivery button stays visible but disabled outside Morocco, an
   assert.equal(codButton.disabled, true, 'no cash on delivery outside Morocco');
   assert.equal(transferButton.disabled, false);
   assert.equal(note.hidden, false);
-  assert.match(note.textContent, /Oops — cash on delivery is only available in Morocco\. You can either pay by bank transfer or through WhatsApp\./u);
+  assert.match(note.textContent, /Oops — cash on delivery is only available in Morocco and Western Sahara\. You can either pay by bank transfer or through WhatsApp\./u);
 
   countrySelect.value = 'MA';
   countrySelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.equal(codButton.disabled, false);
+  assert.equal(note.hidden, true);
+
+  countrySelect.value = 'EH';
+  countrySelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal(codButton.disabled, false, 'Western Sahara orders are cash-on-delivery too');
   assert.equal(note.hidden, true);
   dom.window.close();
 });

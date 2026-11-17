@@ -542,7 +542,7 @@ test('checkout requires the delivery address and returns a card session', async 
   assert.deepEqual(insert.params.slice(9, 14), ['12 Silk Road', 'Riad wing', 'Casablanca', '20000', 'MA']);
 });
 
-test('cash on delivery is refused outside Morocco while card orders are accepted anywhere', async () => {
+test('cash on delivery is refused outside Morocco and Western Sahara while card orders are accepted anywhere', async () => {
   const codFake = createRoutePool();
   const codResponse = await request(paymentsApp(codFake.pool, { privateKey: 'pri_live_mismatched', publicKey })).post('/checkout')
     .set('Origin', 'https://shop.example.invalid')
@@ -556,6 +556,19 @@ test('cash on delivery is refused outside Morocco while card orders are accepted
   assert.equal(codResponse.status, 400);
   assert.equal(codResponse.body.error, 'cod_not_available');
   assert.equal(codFake.attempted.some(({ sql }) => sql.startsWith('INSERT INTO store_orders')), false);
+
+  const saharaFake = createRoutePool();
+  const saharaResponse = await request(paymentsApp(saharaFake.pool, { privateKey: 'pri_live_mismatched', publicKey })).post('/checkout')
+    .set('Origin', 'https://shop.example.invalid')
+    .set('Content-Type', 'application/json')
+    .send({
+      paymentMethod: 'cod',
+      customer: { name: 'Sahara Weaver', email: 'sahara@example.com', phone: '+212612345678' },
+      shipping: { ...CHECKOUT_SHIPPING, city: 'Laayoune', country: 'EH' },
+      items: [{ productId: 'mauve-mist', option: 'Small', quantity: 1 }],
+    });
+  assert.equal(saharaResponse.status, 201, 'Western Sahara orders are cash-on-delivery too');
+  assert.equal(saharaResponse.body.mode, 'cod');
 
   const cardFake = createRoutePool();
   const cardResponse = await request(paymentsApp(cardFake.pool)).post('/checkout')
