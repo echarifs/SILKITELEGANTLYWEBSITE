@@ -478,6 +478,14 @@ function handleRoute() {
   resetCheckout();
   document.body.classList.remove('cart-open', 'menu-open');
   app.innerHTML = renderShell(content);
+  // The thank-you logo lives in raw cart markup, so its bundled asset path is
+  // attached after every route render.
+  for (const img of app.querySelectorAll('img.checkout-order-logo')) {
+    img.src = heroLogoUrl;
+    img.width = 176;
+    img.height = 176;
+    img.loading = 'lazy';
+  }
   renderCartItems();
   updateCartCount();
   setupEventListeners();

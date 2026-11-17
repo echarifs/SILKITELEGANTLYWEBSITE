@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import addressParser from 'nodemailer/lib/addressparser/index.js';
+import { orderReferenceFromId } from '../shared/order-reference.js';
 
 export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey = process.env.RESEND_API_KEY, mailFrom = process.env.MAIL_FROM, orderNoticeEmail = process.env.ORDER_NOTICE_EMAIL, allowedOrigins = new Set() } = {}) {
   let transport = null;
@@ -132,7 +133,7 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     assertOrderEmailInput({ email, name, orderId, amountMinor, currency });
     if (!['cod', 'bank_transfer'].includes(paymentMethod)) throw new Error('INVALID_ORDER_EMAIL');
     const safeName = String(name || '').replace(/[\r\n]/gu, ' ').slice(0, 128);
-    const orderReference = orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
+    const orderReference = orderReferenceFromId(orderId);
     const total = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amountMinor / 100);
     const paymentLine = paymentMethod === 'cod'
       ? 'You pay in cash when it is delivered. We will contact you to confirm the delivery.'
@@ -153,7 +154,7 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     }
     const safeName = String(name || '').replace(/[\r\n]/gu, ' ').slice(0, 128);
     const safePhone = phone === null ? '' : String(phone).slice(0, 40);
-    const orderReference = orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
+    const orderReference = orderReferenceFromId(orderId);
     const total = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amountMinor / 100);
     const cashOnDelivery = paymentMethod === 'cod';
     await deliver({
@@ -174,7 +175,7 @@ export function createMailService({ smtpUrl = process.env.SMTP_URL, resendApiKey
     }
     const safeName = String(name || '').replace(/[\r\n]/gu, ' ').slice(0, 128);
     const safeReference = String(transactionId || '').replace(/[\r\n]/gu, '').slice(0, 128);
-    const orderReference = orderId.replace(/-/gu, '').slice(0, 10).toUpperCase();
+    const orderReference = orderReferenceFromId(orderId);
     const total = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amountMinor / 100);
     if (refundAmountMinor !== null && (!Number.isSafeInteger(refundAmountMinor) || refundAmountMinor < 1 || refundAmountMinor > amountMinor)) {
       throw new Error('INVALID_REFUND_EMAIL');

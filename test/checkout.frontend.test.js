@@ -67,7 +67,7 @@ function setup({ user }) {
       if (body?.paymentMethod === 'cod') {
         return { ok: true, status: 201, json: async () => ({
           orderId: 'test-order-id-cod-1',
-          orderReference: 'CODORDER1',
+          orderReference: 'SE-1A2B3C4D',
           amountMinor: 20500,
           currency: 'MAD',
           mode: 'cod',
@@ -76,7 +76,7 @@ function setup({ user }) {
       if (body?.paymentMethod === 'bank_transfer') {
         return { ok: true, status: 201, json: async () => ({
           orderId: 'test-order-id-bt-1',
-          orderReference: 'BTORDER1',
+          orderReference: 'SE-9F8E7D6C',
           amountMinor: 20500,
           currency: 'MAD',
           mode: 'bank_transfer',
@@ -192,7 +192,10 @@ test('signed-in checkout shows identity and address summaries with pens, then co
   assert.deepEqual(checkoutRequest.shipping, { line1: '12 Silk Road', line2: 'Riad wing', city: 'Casablanca', postalCode: '20000', country: 'MA' });
   assert.equal(cart.getItems().length, 0, 'a confirmed cash-on-delivery order empties the cart');
   assert.equal(detailsForm.hidden, true);
-  assert.match(document.querySelector('[data-checkout-order-message]').textContent, /Thank you for your order! Ref CODORDER1/u);
+  assert.equal(document.querySelector('[data-checkout-order-message]').textContent, 'Thank you for your order!');
+  const coming = document.querySelector('[data-checkout-order-coming]').textContent;
+  assert.match(coming, /Your order is coming your way — you pay €205 in cash/u);
+  assert.equal(document.querySelector('[data-checkout-order-reference]').textContent, '#SE-1A2B3C4D');
   assert.match(document.querySelector('[data-checkout-order-summary]').textContent, /delivering to: 12 Silk Road/u);
   assert.equal(document.querySelector('.checkout-back').textContent, 'Return to cart');
   // The address is saved to the account for the next visit.
@@ -280,10 +283,12 @@ test('the bank-transfer button confirms the order from outside Morocco and expla
   assert.equal(checkoutRequest.paymentMethod, 'bank_transfer');
   assert.deepEqual(checkoutRequest.shipping, { line1: '1 Harbour Road', line2: '', city: 'Paris', postalCode: '75001', country: 'FR' });
   assert.equal(cart.getItems().length, 0, 'a confirmed bank-transfer order empties the cart');
-  const message = document.querySelector('[data-checkout-order-message]').textContent;
-  assert.match(message, /Thank you for your order! Ref BTORDER1/u);
-  assert.match(message, /pay €205 by bank transfer/u);
-  assert.match(message, /bank details/u);
+  assert.equal(document.querySelector('[data-checkout-order-message]').textContent, 'Thank you for your order!');
+  const coming = document.querySelector('[data-checkout-order-coming]').textContent;
+  assert.match(coming, /Your order is coming your way once your bank transfer arrives/u);
+  assert.match(coming, /Please pay €205 by bank transfer/u);
+  assert.match(coming, /bank details/u);
+  assert.equal(document.querySelector('[data-checkout-order-reference]').textContent, '#SE-9F8E7D6C');
   dom.window.close();
 });
 

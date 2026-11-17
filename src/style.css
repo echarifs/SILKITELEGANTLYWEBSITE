@@ -2054,11 +2054,40 @@ svg {
   gap: 14px;
 }
 
+.checkout-order-logo {
+  width: 176px;
+  height: 176px;
+  justify-self: center;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .checkout-order-message {
   margin: 0;
   color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.55rem;
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.checkout-order-coming {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.94rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.checkout-order-reference {
+  margin: 0;
+  color: var(--plum);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: center;
 }
 
 .checkout-order-summary {
@@ -2066,6 +2095,7 @@ svg {
   color: var(--ink-soft);
   font-size: 0.86rem;
   line-height: 1.55;
+  text-align: center;
   overflow-wrap: anywhere;
 }
 

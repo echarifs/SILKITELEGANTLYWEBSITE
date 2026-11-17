@@ -303,9 +303,15 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
     if (orderStage) {
       orderStage.hidden = true;
       const message = orderStage.querySelector('[data-checkout-order-message]');
+      const coming = orderStage.querySelector('[data-checkout-order-coming]');
+      const reference = orderStage.querySelector('[data-checkout-order-reference]');
       const summary = orderStage.querySelector('[data-checkout-order-summary]');
+      const logo = orderStage.querySelector('[data-checkout-order-logo]');
       if (message) message.textContent = '';
+      if (coming) coming.textContent = '';
+      if (reference) reference.textContent = '';
       if (summary) summary.textContent = '';
+      if (logo) logo.hidden = true;
     }
     if (shippingStage) shippingStage.hidden = true;
     if (shippingForm) shippingForm.reset();
@@ -481,13 +487,18 @@ export function mountCheckout({ cart, formatCurrency, showToast, updateCartCount
       form.hidden = true;
       const second = details.shipping.line2 ? `, ${details.shipping.line2}` : '';
       const message = query('[data-checkout-order-message]');
+      const coming = query('[data-checkout-order-coming]');
       const summary = query('[data-checkout-order-summary]');
       const total = formatCurrency(body.amountMinor / 100);
-      if (message) {
-        message.textContent = body.mode === 'bank_transfer'
-          ? `Thank you for your order! Ref ${body.orderReference}. Please pay ${total} by bank transfer; we will send you our bank details right away (WhatsApp or email).`
-          : `Thank you for your order! Ref ${body.orderReference}. You pay ${total} in cash when it is delivered.`;
+      if (message) message.textContent = 'Thank you for your order!';
+      if (coming) {
+        coming.textContent = body.mode === 'bank_transfer'
+          ? `Your order is coming your way once your bank transfer arrives. Please pay ${total} by bank transfer; we will send you our bank details right away (WhatsApp or email).`
+          : `Your order is coming your way — you pay ${total} in cash when it is delivered.`;
       }
+      const reference = query('[data-checkout-order-reference]');
+      if (reference) reference.textContent = `#${body.orderReference}`;
+      query('[data-checkout-order-logo]')?.removeAttribute('hidden');
       if (summary) {
         summary.textContent = `Order for ${details.customer.name} — delivering to: ${details.shipping.line1}${second}, ${details.shipping.city} ${details.shipping.postalCode}. We will contact you to confirm.`;
       }

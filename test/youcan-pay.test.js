@@ -689,6 +689,7 @@ test('a placed order is mirrored into the owner spreadsheet with its delivery in
   const order = mirrored[0];
   assert.equal(order.id, response.body.orderId);
   assert.equal(order.reference, response.body.orderReference);
+  assert.match(order.reference, /^SE-[0-9A-F]{8}$/u, 'order references carry the SE brand prefix');
   assert.equal(order.paymentMethod, 'cod');
   assert.equal(order.status, 'pending_payment');
   assert.equal(order.name, 'Cash Weaver');

@@ -24,6 +24,7 @@ import {
   verifyYouCanPaySignature,
 } from './youcan-pay.js';
 import { enqueuePaymentEmail } from './payment-mail-queue.js';
+import { orderReferenceFromId } from '../shared/order-reference.js';
 
 export const PAYMENTS_MIGRATION_ID = '003-youcanpay-orders';
 const CURRENCY = 'MAD';
@@ -264,7 +265,7 @@ export function resolvePaymentsMode(livePrivateKey, livePublicKey, sandboxPrivat
   return null;
 }
 
-const orderReferenceFrom = (orderId) => String(orderId).replace(/-/gu, '').slice(0, 10).toUpperCase();
+const orderReferenceFrom = (orderId) => orderReferenceFromId(orderId);
 
 /** Re-mirror one stored order into the owner's spreadsheet after its status changed. */
 export async function syncOrderSheetFromRow(pool, orderSheets, orderId) {
