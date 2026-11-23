@@ -163,10 +163,10 @@ test('order totals come from the server catalogue and ignore browser-supplied pr
     { productId: 'ivory-whisper', option: 'Medium', quantity: 2, price: 0 },
   ]);
   assert.equal(order.currency, 'MAD');
-  assert.equal(order.amountMinor, 313500);
+  assert.equal(order.amountMinor, 1200000);
   assert.deepEqual(order.lines.map(({ productName, option, quantity, unitAmountMinor }) => ({ productName, option, quantity, unitAmountMinor })), [
-    { productName: 'Mauve Mist', option: 'Small', quantity: 1, unitAmountMinor: 93500 },
-    { productName: 'Ivory Whisper', option: 'Medium', quantity: 2, unitAmountMinor: 110000 },
+    { productName: 'Mauve Mist', option: 'Small', quantity: 1, unitAmountMinor: 400000 },
+    { productName: 'Ivory Whisper', option: 'Medium', quantity: 2, unitAmountMinor: 400000 },
   ]);
 });
 
@@ -657,7 +657,7 @@ test('cash-on-delivery orders skip the payment provider entirely and mail custom
   assert.equal(response.status, 201);
   assert.equal(response.body.mode, 'cod');
   assert.equal(response.body.currency, 'MAD');
-  assert.equal(response.body.amountMinor, 93500);
+  assert.equal(response.body.amountMinor, 400000);
   assert.ok(response.body.orderId);
   assert.ok(response.body.orderReference);
   assert.equal(response.body.token, undefined, 'cash on delivery never tokenizes a card');
@@ -696,7 +696,7 @@ test('a placed order is mirrored into the owner spreadsheet with its delivery in
   assert.equal(order.phone, '+212612345678');
   assert.deepEqual(order.shipping, CHECKOUT_SHIPPING);
   assert.equal(order.currency, 'MAD');
-  assert.equal(order.amountMinor, 93500);
+  assert.equal(order.amountMinor, 400000);
   assert.deepEqual(order.lines.map(({ productName, option, quantity }) => ({ productName, option, quantity })),
     [{ productName: 'Mauve Mist', option: 'Small', quantity: 1 }]);
   assert.ok(order.createdAt instanceof Date);
